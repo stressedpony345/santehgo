@@ -1,0 +1,66 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-santehgo}"
+      POSTGRES_USER: "${POSTGRES_USER:-santehgo}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-change-this-password}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-santehgo} -d ${POSTGRES_DB:-santehgo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    restart: unless-stopped
+    environment:
+      DJANGO_DEBUG: "false"
+      DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:-*}"
+      DJANGO_CSRF_TRUSTED_ORIGINS: "${DJANGO_CSRF_TRUSTED_ORIGINS:-}"
+      DJANGO_MEDIA_ROOT: /app/media
+      GUNICORN_WORKERS: "${GUNICORN_WORKERS:-2}"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "${POSTGRES_DB:-santehgo}"
+      POSTGRES_USER: "${POSTGRES_USER:-santehgo}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-change-this-password}"
+      DADATA_API_TOKEN: "${DADATA_API_TOKEN:-}"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - django_data:/app/data
+      - media_files:/app/media
+      - static_files:/app/staticfiles
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /var/www/certbot:/var/www/certbot:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - media_files:/srv/media:ro
+      - static_files:/srv/static:ro
+
+volumes:
+  postgres_data:
+  django_data:
+  media_files:
+  static_files:

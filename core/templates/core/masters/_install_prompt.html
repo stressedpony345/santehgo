@@ -1,0 +1,21 @@
+{% load static %}
+<section class="pwa-install" id="pwa-install" hidden>
+  <div class="pwa-install__icon"><img src="{% static 'core/img/pwa-icon-192.png' %}?v=3" alt=""></div>
+  <div class="pwa-install__copy">
+    <strong>Установить приложение</strong>
+    <span>Заявки и уведомления всегда под рукой</span>
+  </div>
+  <button class="pwa-install__button" id="pwa-install-button" type="button">Установить</button>
+  <button class="pwa-install__dismiss" id="pwa-install-dismiss" type="button" aria-label="Скрыть">×</button>
+</section>
+
+<dialog class="install-help" id="install-help">
+  <div class="install-help__sheet">
+    <button class="install-help__close" type="button" aria-label="Закрыть">×</button>
+    <div class="install-help__icon"><img src="{% static 'core/img/pwa-icon-192.png' %}?v=3" alt=""></div>
+    <p class="view-kicker">Установка САНТЕХГО</p>
+    <h2 id="install-help-title">Добавьте приложение на экран</h2>
+    <div class="install-help__steps" id="install-help-steps"></div>
+    <button class="install-help__done" type="button">Понятно</button>
+  </div>
+</dialog>

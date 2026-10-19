@@ -1,0 +1,97 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: santehgo-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Validate deployment secrets
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_PORT"
+          test -n "$DEPLOY_PATH"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/santehgo_deploy
+          chmod 600 ~/.ssh/santehgo_deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Package tracked project files
+        run: git archive --format=tar.gz --output="$RUNNER_TEMP/santehgo-$GITHUB_SHA.tar.gz" HEAD
+
+      - name: Upload release archive
+        run: |
+          scp \
+            -i ~/.ssh/santehgo_deploy \
+            -P "$DEPLOY_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=30 \
+            -o ServerAliveInterval=15 \
+            "$RUNNER_TEMP/santehgo-$GITHUB_SHA.tar.gz" \
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/santehgo-$GITHUB_SHA.tar.gz"
+
+      - name: Activate release
+        run: |
+          ssh \
+            -i ~/.ssh/santehgo_deploy \
+            -p "$DEPLOY_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=30 \
+            -o ServerAliveInterval=15 \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_PATH='$DEPLOY_PATH' RELEASE_ARCHIVE='/tmp/santehgo-$GITHUB_SHA.tar.gz' sh -s" <<'REMOTE'
+          set -eu
+          cleanup() {
+            rm -f "$RELEASE_ARCHIVE"
+          }
+          trap cleanup EXIT
+
+          test -d "$DEPLOY_PATH"
+          tar -xzf "$RELEASE_ARCHIVE" -C "$DEPLOY_PATH"
+          cd "$DEPLOY_PATH"
+
+          docker compose build web
+          docker compose up -d --remove-orphans
+          docker compose exec -T web python manage.py check
+          docker compose ps
+          REMOTE
+
+      - name: Verify public site
+        run: curl --fail --show-error --silent --retry 8 --retry-delay 5 --retry-all-errors https://xn--80agf5ahnjz.xn--p1ai/ > /dev/null

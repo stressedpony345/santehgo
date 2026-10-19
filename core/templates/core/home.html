@@ -1,0 +1,376 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>САНТЕХГО.РФ — ВСЁ ДЛЯ ВАШЕГО КОМФОРТА</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Manrope:wght@400;600;700;800&family=Unbounded:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=66">
+  <link rel="stylesheet" href="{% static 'core/css/cta.css' %}?v=1">
+</head>
+<body>
+  <header class="hero" id="hero">
+    <div class="hero__bg" aria-hidden="true"></div>
+    <div class="hero__inner">
+      <div class="hero__top">
+        <div class="hero__brand">
+          <a class="hero__logo" href="/" aria-label="сантехго.рф">
+            <img
+              class="hero__logo-img"
+              src="{% static 'core/img/logo.svg' %}?v=2"
+              alt="сантехго.рф"
+              width="600"
+              height="98"
+            >
+          </a>
+        </div>
+        <div class="hero__phone">
+          <div class="hero__availability">
+            <span class="hero__online-dot"></span>
+            <span>Принимаем заявки 24/7</span>
+          </div>
+          <a class="hero__phone-link" href="tel:+79087053585">
+            <span class="hero__phone-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+                <path d="M7 3.8h3.2l1.2 3.2-1.7 1.2a12.5 12.5 0 0 0 6.1 6.1l1.2-1.7 3.2 1.2V17a2 2 0 0 1-2.2 2A16.2 16.2 0 0 1 5 6.2 2 2 0 0 1 7 3.8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            8 (908) 705-35-85
+          </a>
+          <a
+            class="hero__max-link"
+            href="https://max.ru/u/f9LHodD0cOLHZD05eRRmSG61Sq_oEq0JxCR3f74VfJU_7itc_zslA4CJ3VU"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Связаться с нами в мессенджере MAX"
+          >
+            <img src="{% static 'core/img/max-logo.svg' %}" alt="MAX" width="28" height="28">
+            <span>Написать в MAX</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="hero__main">
+        <div class="hero__promo">
+          <div class="hero__copy">
+            <p class="hero__eyebrow"><span></span> Выезд по Челябинску</p>
+            <h1 class="hero__headline">САНТЕХНИК РЯДОМ.<br><em>ГО! И все работает.</em></h1>
+            <p class="hero__tags">Решаем бытовые и инженерные задачи: от срочной протечки до монтажа сантехники и отопления.</p>
+            <div class="hero__actions">
+              <a class="hero__primary" href="#quote-form">Рассчитать стоимость</a>
+              <a class="hero__secondary" href="tel:+79087053585">
+                <span aria-hidden="true">↗</span> Позвонить мастеру
+              </a>
+            </div>
+          </div>
+
+          <ul class="hero__works" aria-label="Что умеем делать">
+            <li>
+              <span class="hero__work-icon" aria-hidden="true">
+                <img src="{% static 'core/img/icon-leak.svg' %}" alt="" width="42" height="42">
+              </span>
+              <span class="hero__work-name">Устраняем<br>течи</span>
+            </li>
+            <li>
+              <span class="hero__work-icon" aria-hidden="true">
+                <img src="{% static 'core/img/icon-clog.svg' %}" alt="" width="42" height="42">
+              </span>
+              <span class="hero__work-name">Чистим<br>засоры</span>
+            </li>
+            <li>
+              <span class="hero__work-icon" aria-hidden="true">
+                <img src="{% static 'core/img/icon-repair.svg' %}" alt="" width="42" height="42">
+              </span>
+              <span class="hero__work-name">Ремонтируем<br>сантехнику</span>
+            </li>
+            <li>
+              <span class="hero__work-icon" aria-hidden="true">
+                <img src="{% static 'core/img/icon-install.svg' %}" alt="" width="42" height="42">
+              </span>
+              <span class="hero__work-name">Устанавливаем<br>и меняем</span>
+            </li>
+          </ul>
+
+          <div class="hero__visual">
+            <div class="hero__visual-orbit" aria-hidden="true"></div>
+            <div class="hero__plumber">
+              <img
+                class="hero__plumber-img"
+                src="{% static 'core/img/hero-master.jpg' %}"
+                alt="Мастер САНТЕХГО"
+                width="1024"
+                height="705"
+                decoding="async"
+                fetchpriority="high"
+              >
+            </div>
+            <div class="hero__visual-badge hero__visual-badge--top">
+              <span class="hero__badge-dot" aria-hidden="true"></span><strong>24/7</strong><span>приём заявок</span>
+            </div>
+            <div class="hero__visual-badge hero__visual-badge--bottom">
+              <span class="hero__badge-check">✓</span><span>Цена известна<br><strong>до начала работ</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <form class="quote" id="quote-form">
+          <div class="quote__head">
+            <span class="quote__icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32" width="28" height="28" fill="none">
+                <rect x="6" y="4" width="20" height="24" rx="3" stroke="#1A7FD4" stroke-width="1.8"/>
+                <path d="M11 12h10M11 17h10M11 22h6" stroke="#1A7FD4" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <div>
+              <h2 class="quote__title">Быстрый расчёт</h2>
+              <p class="quote__text">Оставьте данные — мы перезвоним и скажем точную стоимость</p>
+            </div>
+          </div>
+
+          <div class="quote__field">
+            <span class="quote__field-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                <path d="M12 3c3.2 4.6 5 7.5 5 10.1A5 5 0 1 1 7 13.1C7 10.5 8.8 7.6 12 3Z" stroke="#1A7FD4" stroke-width="1.8" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span class="quote__field-body">
+              <select
+                class="quote__control"
+                name="issue"
+                id="quote-issue"
+                data-placeholder="Например: течь, засор, установка"
+              >
+                <option value="" selected hidden></option>
+                {% for category in categories %}
+                  <optgroup label="{{ category.name }}">
+                    {% for sub in category.subcategories %}
+                      <option value="{{ sub.id }}">{{ sub.name }}</option>
+                    {% endfor %}
+                  </optgroup>
+                {% endfor %}
+              </select>
+            </span>
+          </div>
+
+          <label class="quote__field">
+            <span class="quote__field-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                <path d="M12 21s7-6.2 7-11.2A7 7 0 0 0 5 9.8C5 14.8 12 21 12 21Z" stroke="#1A7FD4" stroke-width="1.8"/>
+                <circle cx="12" cy="9.8" r="2.2" stroke="#1A7FD4" stroke-width="1.8"/>
+              </svg>
+            </span>
+            <span class="quote__field-body">
+              <span class="quote__label">Ваш адрес</span>
+              <span class="address-suggest">
+                <input class="quote__control" id="address-input" type="text" name="address" placeholder="Улица, район или микрорайон" maxlength="240" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="address-suggestions">
+                <button class="address-suggest__clear" id="address-clear" type="button" aria-label="Очистить адрес" hidden>
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 6 8 8m0-8-8 8"/></svg>
+                </button>
+                <span class="address-suggest__menu" id="address-suggestions" role="listbox" aria-label="Адреса в Челябинске" hidden></span>
+              </span>
+            </span>
+          </label>
+
+          <div class="quote__field">
+            <span class="quote__field-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                <rect x="4" y="5" width="16" height="15" rx="2" stroke="#1A7FD4" stroke-width="1.8"/>
+                <path d="M8 3v4M16 3v4M4 10h16" stroke="#1A7FD4" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span class="quote__field-body">
+              <span class="quote__label">Когда удобно?</span>
+              <span class="visit-picker">
+                <input id="visit-value" type="hidden" name="preferred_time" value="">
+                <button class="visit-picker__toggle" id="visit-toggle" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="visit-picker-menu">
+                  <span class="visit-picker__value is-placeholder">Выберите дату и время</span>
+                  <svg viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5 6 6.5 11 1.5"/></svg>
+                </button>
+                <span class="visit-picker__menu" id="visit-picker-menu" role="dialog" aria-label="Дата и время выезда мастера" hidden>
+                  <span class="visit-picker__topline">
+                    <strong>Когда приехать мастеру?</strong>
+                    <button class="visit-picker__reset" type="button">Сбросить</button>
+                  </span>
+                  <span class="visit-picker__quick">
+                    <button type="button" data-quick-day="0">Сегодня</button>
+                    <button type="button" data-quick-day="1">Завтра</button>
+                  </span>
+                  <span class="visit-picker__calendar-head">
+                    <button class="visit-picker__month-nav" type="button" data-month-step="-1" aria-label="Предыдущий месяц">‹</button>
+                    <strong id="visit-month-label"></strong>
+                    <button class="visit-picker__month-nav" type="button" data-month-step="1" aria-label="Следующий месяц">›</button>
+                  </span>
+                  <span class="visit-picker__weekdays" aria-hidden="true">
+                    <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+                  </span>
+                  <span class="visit-picker__days" id="visit-days"></span>
+                  <span class="visit-picker__time-title">Удобное время</span>
+                  <span class="visit-picker__times" id="visit-times"></span>
+                </span>
+              </span>
+            </span>
+          </div>
+
+          <button class="quote__submit" type="submit">
+            <span class="quote__submit-text">Оставить заявку</span>
+            <span class="quote__submit-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                <path d="M5 12h13M13 7l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </button>
+          <p class="quote__secure">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+              <rect x="5" y="11" width="14" height="10" rx="2" stroke="#6b8aa8" stroke-width="1.6"/>
+              <path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#6b8aa8" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+            Ваши данные в безопасности и не передаются третьим лицам
+          </p>
+        </form>
+      </div>
+
+      <ul class="hero__trust">
+        <li>
+          <span class="hero__trust-icon" aria-hidden="true">
+            <img src="{% static 'core/img/trust-currency-ruble.svg' %}" alt="">
+          </span>
+          <span>
+            <strong>Без скрытых доплат</strong>
+            <span>Сразу называем честную цену</span>
+          </span>
+        </li>
+        <li>
+          <span class="hero__trust-icon" aria-hidden="true">
+            <img src="{% static 'core/img/trust-shield-check.svg' %}" alt="">
+          </span>
+          <span>
+            <strong>Гарантия от 1 года</strong>
+            <span>Обслужим бесплатно в течение срока гарантии</span>
+          </span>
+        </li>
+        <li>
+          <span class="hero__trust-icon" aria-hidden="true">
+            <img src="{% static 'core/img/trust-user-check.svg' %}" alt="">
+          </span>
+          <span>
+            <strong>Опрятные мастера</strong>
+            <span>Чистая работа и уважение к вашему дому</span>
+          </span>
+        </li>
+      </ul>
+
+      <a class="hero__scroll" id="hero-scroll" href="#content" aria-label="Прокрутить вниз">
+        <span class="hero__scroll-label">Листайте вниз</span>
+        <span class="hero__scroll-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none">
+            <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+      </a>
+    </div>
+  </header>
+
+  <main class="page" id="content">
+    <section class="services" aria-labelledby="services-title" data-assets-base="{% static 'core/img/' %}">
+      <div class="services__head">
+        <h2 class="services__title" id="services-title">Выберите нужную услугу</h2>
+        <p class="services__lead">Отметьте одну или несколько работ. Мы объединим их в одну заявку.</p>
+      </div>
+
+      <div class="catalog-tools">
+        <div class="search-wrap">
+          <label class="search-label" for="service-search">Что нужно сделать?</label>
+          <label class="search" for="service-search">
+            <span class="search__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
+                <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
+                <path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <input class="search__input" id="service-search" type="search" name="q"
+              placeholder="Например: кран или унитаз" autocomplete="off" enterkeyhint="search">
+          </label>
+        </div>
+        <p class="catalog-count" id="catalog-count" aria-live="polite"></p>
+      </div>
+
+      <div class="category-heading">
+        <p class="category-label">Или выберите раздел:</p>
+        <span class="category-hint">Листайте вправо →</span>
+      </div>
+      <nav class="category-nav" id="category-nav" aria-label="Категории услуг"></nav>
+      <div class="category-scroll" id="category-scroll" role="scrollbar" tabindex="0"
+        aria-label="Прокрутка категорий" aria-controls="category-nav" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <span class="category-scroll__thumb" id="category-scroll-thumb"></span>
+      </div>
+      <div class="catalog-grid" id="categories-track" aria-label="Каталог услуг"></div>
+      <div class="catalog-empty" id="categories-empty" hidden>
+        <strong>Ничего не найдено</strong>
+        <span>Попробуйте изменить запрос или выбрать другую категорию.</span>
+      </div>
+    </section>
+  </main>
+
+  <aside class="work-list" id="work-list" hidden aria-label="Выбранные работы">
+    <div class="work-list__inner">
+      <div class="work-list__summary">
+        <span class="work-list__icon" aria-hidden="true">✓</span>
+        <span>
+          <strong class="work-list__title">Ваш список работ</strong>
+          <span class="work-list__details" id="work-list-details">Ничего не выбрано</span>
+        </span>
+      </div>
+      <div class="work-list__actions">
+        <button class="work-list__clear" id="work-list-clear" type="button">Очистить</button>
+        <button class="work-list__submit" id="work-list-submit" type="button">Оставить заявку</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="modal" id="modal-services" hidden>
+    <div class="modal__backdrop" data-modal-close></div>
+    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="modal-services-title">
+      <button class="modal__close" type="button" aria-label="Закрыть" data-modal-close>&times;</button>
+      <h2 class="modal__title" id="modal-services-title">Выберите работы</h2>
+      <p class="modal__subtitle" id="modal-services-subtitle"></p>
+      <form class="checklist" id="services-form">
+        <div class="checklist__list" id="services-checklist"></div>
+        <p class="checklist__empty" id="works-empty" hidden>Такая работа не найдена</p>
+        <p class="modal__error" id="services-error" hidden></p>
+        <button class="btn btn--primary" type="submit">Сохранить выбор</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="modal-contacts" hidden>
+    <div class="modal__backdrop" data-modal-close></div>
+    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="modal-contacts-title">
+      <button class="modal__close" type="button" aria-label="Закрыть" data-modal-close>&times;</button>
+      <h2 class="modal__title" id="modal-contacts-title">Контактные данные</h2>
+      <p class="modal__subtitle">Оставьте контакты — перезвоним и уточним детали</p>
+      <div class="request-summary" id="request-summary" hidden></div>
+      <form class="contacts" id="contacts-form">
+        <label class="field">
+          <span class="field__label">ФИО</span>
+          <input class="field__input" type="text" name="full_name" required maxlength="200" placeholder="Иванов Иван Иванович" autocomplete="name">
+        </label>
+        <label class="field">
+          <span class="field__label">Телефон</span>
+          <input class="field__input" type="tel" name="phone" required maxlength="32" placeholder="+7 (999) 123-45-67" autocomplete="tel">
+        </label>
+        <p class="modal__error" id="contacts-error" hidden></p>
+        <button class="btn btn--go" type="submit">Отправить заявку</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+
+  {{ categories|json_script:"categories-data" }}
+  <script src="{% static 'core/js/hero.js' %}?v=4" defer></script>
+  <script src="{% static 'core/js/services.js' %}?v=39" defer></script>
+</body>
+</html>

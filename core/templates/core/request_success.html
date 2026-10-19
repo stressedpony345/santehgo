@@ -1,0 +1,45 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Заявка принята — САНТЕХГО.РФ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Unbounded:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'core/css/request-success.css' %}?v=1">
+</head>
+<body class="success-page">
+  <main class="success-shell">
+    <header class="success-header">
+      <a class="success-logo" href="/" aria-label="САНТЕХГО.РФ — на главную">
+        <img src="{% static 'core/img/logo.svg' %}?v=2" alt="САНТЕХГО.РФ" width="600" height="98">
+      </a>
+      <div class="success-availability"><span></span> Принимаем заявки 24/7</div>
+    </header>
+
+    <section class="success-card" aria-labelledby="success-title">
+      <div class="success-glow" aria-hidden="true"></div>
+      <div class="success-check" aria-hidden="true">
+        <svg viewBox="0 0 64 64"><path d="m18 33 9 9 20-22"/></svg>
+      </div>
+      <p class="success-eyebrow">Заявка успешно отправлена</p>
+      <h1 id="success-title">Заявка принята<br><em>в работу</em></h1>
+      <p class="success-text">Мы рассмотрим её в ближайшее время и свяжемся с вами по указанному номеру телефона.</p>
+
+      <div class="success-status">
+        <span class="success-status__number">01</span>
+        <span><strong>Что дальше?</strong><small>Мастер уточнит детали, рассчитает стоимость и согласует удобное время выезда.</small></span>
+      </div>
+
+      <a class="success-back" href="/">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
+        Вернуться на главную
+      </a>
+      <p class="success-phone">Нужно срочно? <a href="tel:+79087053585">8 (908) 705-35-85</a></p>
+    </section>
+  </main>
+</body>
+</html>

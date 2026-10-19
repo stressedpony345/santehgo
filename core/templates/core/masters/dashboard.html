@@ -1,0 +1,86 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#073c66">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Кабинет мастера — САНТЕХГО</title>
+  <link rel="manifest" href="{% url 'master_manifest' %}">
+  <link rel="apple-touch-icon" href="{% static 'core/img/pwa-icon-192.png' %}?v=3">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Unbounded:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'core/css/masters.css' %}?v=5">
+</head>
+<body class="master-app">
+  <header class="app-header">
+    <a href="/masters/" class="app-logo"><img src="{% static 'core/img/logo.svg' %}?v=2" alt="САНТЕХГО"></a>
+    <div class="app-header__status"><span></span><small>На смене</small><strong id="master-name">Мастер</strong></div>
+  </header>
+
+  <main class="app-main">
+    {% include 'core/masters/_install_prompt.html' %}
+    <section class="app-view is-active" data-view="available">
+      <div class="view-head">
+        <div><p class="view-kicker">Общая очередь</p><h1>Новые заявки <span id="available-count">0</span></h1></div>
+        <button class="notify-button" id="notify-button" type="button" aria-label="Включить уведомления"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></button>
+      </div>
+      <div class="request-list" id="available-list"></div>
+      <div class="empty-state" id="available-empty" hidden><span>✓</span><strong>Все заявки разобраны</strong><small>Новые обращения появятся здесь автоматически</small></div>
+    </section>
+
+    <section class="app-view" data-view="mine" hidden>
+      <div class="view-head"><div><p class="view-kicker">Личная очередь</p><h1>Мои заявки <span id="mine-count">0</span></h1></div></div>
+      <div class="request-list" id="mine-list"></div>
+      <div class="empty-state" id="mine-empty" hidden><span>↗</span><strong>Пока пусто</strong><small>Возьмите заявку из общей очереди</small></div>
+    </section>
+
+    <section class="app-view" data-view="income" hidden>
+      <div class="view-head"><div><p class="view-kicker">Финансы</p><h1>Доход</h1></div><span class="soon-badge">В разработке</span></div>
+      <div class="income-preview" aria-disabled="true">
+        <div class="income-lock">🔒</div>
+        <p>Ваш доход за месяц</p><strong>84 600 ₽</strong><small>Пример будущего раздела</small>
+        <div class="income-bars"><i style="height:35%"></i><i style="height:58%"></i><i style="height:46%"></i><i style="height:82%"></i><i style="height:67%"></i><i style="height:92%"></i><i style="height:74%"></i></div>
+      </div>
+    </section>
+
+    <section class="app-view" data-view="profile" hidden>
+      <div class="view-head"><div><p class="view-kicker">Настройки</p><h1>Профиль</h1></div></div>
+      <article class="profile-card">
+        <div class="profile-avatar">{{ request.user.username|first|upper }}</div>
+        <div><strong>{{ request.user.get_full_name|default:request.user.username }}</strong><small>@{{ request.user.username }}</small></div>
+      </article>
+      <form class="password-card" id="password-form">
+        {% csrf_token %}
+        <h2>Сменить пароль</h2>
+        <label><span>Текущий пароль</span><input type="password" name="old_password" autocomplete="current-password" required></label>
+        <label><span>Новый пароль</span><input type="password" name="new_password1" autocomplete="new-password" required></label>
+        <label><span>Повторите новый пароль</span><input type="password" name="new_password2" autocomplete="new-password" required></label>
+        <p class="profile-message" id="profile-message" hidden></p>
+        <button type="submit">Сохранить новый пароль</button>
+      </form>
+      <form method="post" action="{% url 'master_logout' %}" class="logout-form">{% csrf_token %}<button type="submit">Выйти из аккаунта</button></form>
+    </section>
+  </main>
+
+  <nav class="app-nav" aria-label="Разделы приложения">
+    <button class="is-active" type="button" data-tab="available"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 9h8M8 13h5"/></svg><small>Заявки</small><b id="nav-badge">0</b></button>
+    <button type="button" data-tab="mine"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h10v14H5V9zM9 5v4H5M9 13h6M9 16h4"/></svg><small>Мои</small></button>
+    <button type="button" data-tab="income"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/></svg><small>Доход</small><i>Скоро</i></button>
+    <button type="button" data-tab="profile"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c.8-4 3.5-6 8-6s7.2 2 8 6"/></svg><small>Профиль</small></button>
+  </nav>
+
+  <dialog class="request-dialog" id="request-dialog">
+    <div class="dialog-sheet">
+      <button class="dialog-close" type="button" aria-label="Закрыть">×</button>
+      <div id="dialog-content"></div>
+    </div>
+  </dialog>
+  <div class="app-toast" id="app-toast" hidden></div>
+  <script src="{% static 'core/js/install-pwa.js' %}?v=2" defer></script>
+  <script src="{% static 'core/js/masters.js' %}?v=4" defer></script>
+</body>
+</html>

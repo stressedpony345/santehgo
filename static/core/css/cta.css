@@ -1,0 +1,29 @@
+.quote__submit {
+  justify-content: space-between;
+  gap: 0.9rem;
+  border-radius: 1rem;
+  padding: 0.72rem 0.78rem 0.72rem 1.15rem;
+  background: linear-gradient(135deg, #075b9f 0%, #1687da 100%);
+  font-family: Manrope, sans-serif;
+  font-size: 1.02rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  box-shadow: 0 9px 20px rgba(20, 110, 190, 0.24);
+}
+
+.quote__submit-icon {
+  display: grid;
+  place-items: center;
+  width: 2.45rem;
+  height: 2.45rem;
+  flex: 0 0 2.45rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+@media (max-width: 720px) {
+  .quote__submit {
+    min-height: 3.65rem;
+    padding-left: 1.1rem;
+  }
+}

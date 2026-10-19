@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 98" role="img" aria-labelledby="logo-title logo-description">
+  <title id="logo-title">САНТЕХГО.РФ</title>
+  <desc id="logo-description">Логотип службы сантехнических услуг САНТЕХГО.РФ</desc>
+  <rect width="600" height="98" rx="32" fill="#0b2946"/>
+  <text
+    x="22"
+    y="71"
+    fill="#ffffff"
+    font-family="Arial, 'DejaVu Sans', sans-serif"
+    font-size="62"
+    font-weight="800"
+    letter-spacing="1"
+    textLength="556"
+    lengthAdjust="spacingAndGlyphs"
+  >САНТЕХ<tspan fill="#1688dc">ГО</tspan><tspan fill="#ffffff">.РФ</tspan></text>
+</svg>

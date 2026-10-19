@@ -1,0 +1,17 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.py[cod]
+*.log
+.env
+.idea
+.vscode
+staticfiles
+media
+data
+db.sqlite3
+deploy-data.json
+.artifact-node
+outputs
+.github
