@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core import signing
 from django.core.management import call_command
 from django.test import TestCase
 from PIL import Image
@@ -110,6 +111,22 @@ class MasterAppTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.request_item.refresh_from_db()
         self.assertEqual(self.request_item.assigned_to, self.master)
+        self.assertIsNone(self.request_item.work_started_at)
+        self.assertEqual(self.client.get('/masters/api/requests/').json()['mine'][0]['work_started_at'], '')
+        self.assertEqual(self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/').status_code, 409)
+        self.assertEqual(self.client.post(f'/masters/api/requests/{self.request_item.id}/start/').status_code, 200)
+        self.assertEqual(self.client.post(f'/masters/api/requests/{self.request_item.id}/start/').status_code, 409)
+        self.request_item.refresh_from_db()
+        self.assertIsNotNone(self.request_item.work_started_at)
+
+    def test_start_requires_assigned_master(self):
+        self.client.force_login(self.master)
+        url = f'/masters/api/requests/{self.request_item.id}/start/'
+        self.assertEqual(self.client.post(url).status_code, 404)
+        self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/')
+        other = get_user_model().objects.create_user(username='other-starter', password='pass', is_staff=True)
+        self.client.force_login(other)
+        self.assertEqual(self.client.post(url).status_code, 404)
 
     def test_manifest_is_available(self):
         response = self.client.get('/masters/manifest.webmanifest')
@@ -119,6 +136,8 @@ class MasterAppTests(TestCase):
     def test_master_adds_catalog_and_custom_work_to_claimed_request(self):
         self.client.force_login(self.master)
         self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/')
+        self.assertEqual(self.client.post(f'/masters/api/requests/{self.request_item.id}/extra-works/', json.dumps({'work_id': self.work.id}), content_type='application/json').status_code, 409)
+        self.client.post(f'/masters/api/requests/{self.request_item.id}/start/')
         search = self.client.get('/masters/api/works/', {'q': 'Замена'}).json()
         self.assertIn(self.work.id, [item['id'] for item in search['works']])
 
@@ -147,6 +166,7 @@ class MasterAppTests(TestCase):
         self.client.force_login(self.master)
         self.assertEqual(self.client.post(url, body, content_type='application/json').status_code, 404)
         self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/')
+        self.client.post(f'/masters/api/requests/{self.request_item.id}/start/')
         for invalid in ({'name': '', 'price': 500}, {'name': 'Тест', 'price': -1}, {'work_id': 999999}):
             self.assertEqual(self.client.post(url, json.dumps(invalid), content_type='application/json').status_code, 400)
         other = get_user_model().objects.create_user(username='other-master', password='pass', is_staff=True)
@@ -162,6 +182,7 @@ class MasterAppTests(TestCase):
         self.client.force_login(self.master)
         claim = self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/')
         self.assertEqual(claim.status_code, 200)
+        self.assertEqual(self.client.post(f'/masters/api/requests/{self.request_item.id}/start/').status_code, 200)
 
         missing_photo = self.client.post(f'/masters/api/requests/{self.request_item.id}/complete/')
         self.assertEqual(missing_photo.status_code, 400)
@@ -224,6 +245,7 @@ class MasterAppTests(TestCase):
     def test_completion_media_approval_and_frozen_40_percent(self):
         self.client.force_login(self.master)
         self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/')
+        self.client.post(f'/masters/api/requests/{self.request_item.id}/start/')
         image = Image.new('RGB', (20, 20), color='white')
         content = BytesIO()
         image.save(content, format='JPEG')
@@ -253,10 +275,17 @@ class MasterAppTests(TestCase):
         self.request_item.assigned_to = self.master
         self.request_item.completion_status = ServiceRequest.CompletionStatus.PENDING
         self.request_item.save(update_fields=['assigned_to', 'completion_status'])
+        self.assertEqual(self.client.post(f'/masters/api/requests/{self.request_item.pk}/payment/confirm/').status_code, 409)
+        self.assertEqual(self.client.get(f'/masters/api/requests/{self.request_item.pk}/payment/qr/').status_code, 404)
         moderator = self._approve()
         self.assertEqual(self.client.post(url, json.dumps({'method': 'bank'}), content_type='application/json').status_code, 400)
         self.assertEqual(self.client.post(url, json.dumps({'method': 'cash'}), content_type='application/json').status_code, 200)
         self.assertEqual(self.client.post(url, json.dumps({'method': 'qr'}), content_type='application/json').status_code, 409)
+        confirm_url = f'/masters/api/requests/{self.request_item.pk}/payment/confirm/'
+        self.assertEqual(self.client.post(f'/masters/api/requests/{self.request_item.pk}/cash-report/').status_code, 409)
+        self.assertEqual(self.client.get('/masters/api/earnings/').json()['cash_due'], 0)
+        self.assertEqual(self.client.post(confirm_url).status_code, 200)
+        self.assertEqual(self.client.post(confirm_url).status_code, 409)
         data = self.client.get('/masters/api/earnings/').json()
         self.assertEqual(data['cash_due'], 1380)
         self.assertEqual(data['available'], 0)
@@ -274,7 +303,19 @@ class MasterAppTests(TestCase):
         self._approve()
         qr_url = f'/masters/api/requests/{second.pk}/payment/'
         self.assertEqual(self.client.post(qr_url, json.dumps({'method': 'qr'}), content_type='application/json').status_code, 200)
+        qr_image = self.client.get(f'/masters/api/requests/{second.pk}/payment/qr/')
+        self.assertEqual(qr_image.status_code, 200)
+        self.assertTrue(qr_image.content.startswith(b'\x89PNG'))
+        other = get_user_model().objects.create_user(username='other-payment', password='pass', is_staff=True)
+        self.client.force_login(other)
+        self.assertEqual(self.client.get(f'/masters/api/requests/{second.pk}/payment/qr/').status_code, 404)
+        self.assertEqual(self.client.post(f'/masters/api/requests/{second.pk}/payment/confirm/').status_code, 404)
+        self.client.force_login(self.master)
+        self.assertEqual(self.client.get('/masters/api/earnings/').json()['available'], 0)
+        self.assertEqual(self.client.post(f'/masters/api/requests/{second.pk}/payment/confirm/').status_code, 200)
         self.assertEqual(self.client.get('/masters/api/earnings/').json()['available'], 920)
+        demo_token = signing.dumps({'id': second.pk, 'amount': 2300}, salt='demo-payment')
+        self.assertContains(self.client.get(f'/masters/demo-payment/{demo_token}/'), 'Деньги не списываются')
         with patch('core.views.timezone.localdate', return_value=date(2026, 10, 20)):
             self.assertEqual(self.client.post('/masters/api/withdrawals/').status_code, 403)
         with patch('core.views.timezone.localdate', return_value=date(2026, 10, 19)):
@@ -297,6 +338,7 @@ class MasterAppTests(TestCase):
         self.request_item.save(update_fields=['assigned_to', 'completion_status'])
         moderator = self._approve()
         self.client.post(f'/masters/api/requests/{self.request_item.pk}/payment/', json.dumps({'method': 'qr'}), content_type='application/json')
+        self.client.post(f'/masters/api/requests/{self.request_item.pk}/payment/confirm/')
         with patch('core.views.timezone.localdate', return_value=date(2026, 10, 19)):
             self.client.post('/masters/api/withdrawals/')
         self.client.force_login(moderator)

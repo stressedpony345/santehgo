@@ -1,0 +1,16 @@
+.mine-filters{display:flex;gap:6px;overflow-x:auto;margin:0 0 18px;padding:3px 0 8px;scrollbar-width:thin}
+.mine-filters button{display:flex;align-items:center;gap:8px;flex:0 0 auto;min-height:42px;padding:0 13px;border:1px solid rgba(174,220,245,.22);border-radius:8px;background:rgba(255,255,255,.05);color:#b5d4e4;font:700 12px "Manrope";cursor:pointer}
+.mine-filters button.is-active{border-color:#4cc6ef;background:#1c769e;color:#fff}
+.mine-filters span{display:grid;place-items:center;min-width:21px;height:21px;padding:0 5px;border-radius:5px;background:rgba(255,255,255,.14);font-size:11px}
+.request-card__status.is-active{color:#78d6ff}
+.request-card__status.is-review,.request-card__status.is-payment{color:#ffcb7f}
+.request-card__status.is-done{color:#82e9b5}
+.detail-stage{display:inline-block;margin:0 0 9px;padding:6px 9px;border-radius:6px;background:rgba(112,211,255,.15);color:#a4e4ff;font-size:12px;font-weight:800}
+.detail-primary{width:100%;min-height:48px;margin-top:16px;border:0;border-radius:8px;background:#ff8124;color:#fff;font-weight:800;cursor:pointer}
+.demo-qr{display:grid;justify-items:center;gap:9px;margin:15px 0;padding:14px;border-radius:8px;background:#fff;color:#294353;text-align:center}
+.demo-qr img{display:block;width:min(230px,100%);aspect-ratio:1;object-fit:contain}
+.demo-qr small{max-width:240px;font-size:12px;line-height:1.4}
+.request-card__actions:has(>button:only-child) .request-card__details{flex:1}
+.request-card{cursor:pointer}
+.request-card__payout{margin:6px 0 0}
+@media(max-width:550px){.mine-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.mine-filters button{justify-content:space-between;min-width:0;min-height:40px;padding:0 10px;font-size:11px}.request-card__id{max-width:120px;text-align:right}.request-card__status{white-space:normal}.request-card__actions button{min-width:0;padding:0 9px;font-size:12px}.detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item{min-width:0;padding:11px}.detail-item strong{overflow-wrap:anywhere;font-size:13px}.detail-price{font-size:30px}.detail-price small{display:block;margin-top:4px}}

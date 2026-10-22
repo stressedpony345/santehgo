@@ -1,5 +1,5 @@
 (() => {
-  const state = { available: [], mine: [], latestId: 0, initialized: false };
+  const state = { available: [], mine: [], mineFilter: 'active', latestId: 0, initialized: false };
   const availableList = document.getElementById('available-list');
   const mineList = document.getElementById('mine-list');
   const dialog = document.getElementById('request-dialog');
@@ -24,25 +24,42 @@
     return [...source, ...item.extra_works].map((entry) => entry.name).join(' · ') || item.issue || 'Описание уточняется';
   }
 
+  function stage(item) {
+    if (item.completion_status === 'approved') return item.payment_confirmed_at && (item.payment_method !== 'cash' || item.cash_status === 'confirmed') ? 'done' : 'payment';
+    if (item.completion_status === 'pending') return 'review';
+    return 'active';
+  }
+
+  function stageLabel(item) {
+    if (item.completion_status === 'rejected') return 'Отчёт отклонён';
+    if (item.completion_status === 'pending') return 'На проверке';
+    if (item.completion_status === 'approved') {
+      if (item.payment_confirmed_at) return item.payment_method === 'cash' && item.cash_status !== 'confirmed' ? 'Сдача наличных' : 'Оплачена · тест';
+      return item.payment_method === 'unset' ? 'Выбор оплаты' : 'Ожидает оплаты';
+    }
+    return item.work_started_at ? 'В работе' : 'Передана мастеру';
+  }
+
   function card(item, mine = false) {
-    const completionLabel = {
-      pending: '<i class="request-card__status is-pending">На рассмотрении</i>',
-      approved: '<i class="request-card__status is-approved">✓ Завершена</i>',
-      rejected: '<i class="request-card__status is-rejected">Фото отклонено</i>',
-    }[item.completion_status] || (mine ? '<i class="request-card__status is-working">В работе</i>' : '');
+    const completionLabel = mine ? `<i class="request-card__status is-${stage(item)}">${stageLabel(item)}</i>` : '';
+    const nextAction = item.completion_status === 'approved' ? stage(item) === 'done' ? '' : 'Открыть оплату'
+      : item.completion_status === 'pending' ? ''
+      : !item.work_started_at && item.completion_status === 'none' ? 'Начать работу'
+      : item.completion_status === 'rejected' ? 'Повторить отчёт' : 'Сдать отчёт';
     const article = document.createElement('article');
-    article.className = `request-card${item.is_processed ? ' is-completed' : ''}`;
+    article.className = `request-card${mine && stage(item) === 'done' ? ' is-completed' : ''}`;
     article.innerHTML = `
       <div class="request-card__top">
-        <div><p class="request-card__meta">${escapeHtml(item.created_at)}</p><p class="request-card__price">${money(item.price)} <small>заказ</small></p>${mine ? `<p class="request-card__payout">${item.completion_status === 'approved' ? 'Мастеру' : 'Мастеру после принятия'}: ${money(item.master_payout)}</p>` : ''}</div>
+        <div><p class="request-card__meta">${escapeHtml(item.created_at)}</p><p class="request-card__price">${money(item.price)} <small>заказ</small></p></div>
         <span class="request-card__id">${completionLabel} № ${item.id}</span>
       </div>
+      ${mine ? `<p class="request-card__payout">${item.completion_status === 'approved' ? 'Мастеру' : 'Мастеру после принятия'}: ${money(item.master_payout)}</p>` : ''}
       <h2 class="request-card__title">${escapeHtml(item.issue || workNames(item))}</h2>
       <p class="request-card__works">${escapeHtml(workNames(item))}</p>
       <div class="request-card__actions">
         <button class="request-card__details" type="button" data-details="${item.id}">Подробнее</button>
         ${mine
-          ? `<button class="request-card__complete${item.is_processed ? ' is-done' : ''}" type="button" data-complete="${item.id}" ${item.is_processed ? 'disabled' : ''}>${item.is_processed ? '<span>✓</span> Завершена' : 'Завершить заявку'}</button>`
+          ? (nextAction ? `<button class="request-card__complete" type="button" data-${!item.work_started_at && item.completion_status === 'none' ? 'start' : item.completion_status === 'approved' ? 'details' : 'complete'}="${item.id}">${nextAction}</button>` : '')
           : `<button class="request-card__claim" type="button" data-claim="${item.id}">Взять заявку</button>`}
       </div>`;
     return article;
@@ -50,26 +67,17 @@
 
   function render() {
     availableList.replaceChildren(...state.available.map((item) => card(item)));
-    mineList.replaceChildren(...state.mine.map((item) => card(item, true)));
-    mineList.querySelectorAll('[data-complete]').forEach((button) => {
-      const item = findRequest(button.dataset.complete);
-      if (!item) return;
-      if (item.completion_status === 'pending') {
-        button.disabled = true;
-        button.textContent = 'На модерации';
-      } else if (item.completion_status === 'approved') {
-        button.disabled = true;
-        button.textContent = '✓ Завершена';
-      } else if (item.completion_status === 'rejected') {
-        button.textContent = 'Сфотографировать заново';
-      }
+    const visible = state.mine.filter((item) => stage(item) === state.mineFilter);
+    mineList.replaceChildren(...visible.map((item) => card(item, true)));
+    document.querySelectorAll('[data-filter-count]').forEach((count) => {
+      count.textContent = state.mine.filter((item) => stage(item) === count.dataset.filterCount).length;
     });
     document.getElementById('available-count').textContent = state.available.length;
-    document.getElementById('mine-count').textContent = state.mine.filter((item) => !item.is_processed).length;
+    document.getElementById('mine-count').textContent = state.mine.length;
     document.getElementById('nav-badge').textContent = state.available.length;
     document.getElementById('nav-badge').hidden = !state.available.length;
     document.getElementById('available-empty').hidden = Boolean(state.available.length);
-    document.getElementById('mine-empty').hidden = Boolean(state.mine.length);
+    document.getElementById('mine-empty').hidden = Boolean(visible.length);
   }
 
   async function loadRequests({ announce = false } = {}) {
@@ -99,11 +107,12 @@
   function openDetails(item) {
     if (!item) return;
     const entries = item.works.length ? item.works : item.services;
-    const canAdd = item.assigned_to && !item.is_processed && !['pending', 'approved'].includes(item.completion_status);
+    const canAdd = item.assigned_to && item.work_started_at && !item.is_processed && !['pending', 'approved'].includes(item.completion_status);
     dialogContent.innerHTML = `
       <p class="view-kicker">Заявка № ${item.id}</p>
       <h2>${escapeHtml(item.issue || 'Заявка клиента')}</h2>
-      <p class="detail-price">${money(item.price)}${canAdd ? '<small> · В работе</small>' : ''}</p>
+      <p class="detail-stage">${item.assigned_to ? stageLabel(item) : 'В общей очереди'}</p>
+      <p class="detail-price">${money(item.price)} <small>стоимость заказа</small></p>
       ${item.assigned_to ? `<p class="detail-payout">${item.completion_status === 'approved' ? 'Мастеру' : 'После принятия мастеру'}: ${money(item.master_payout)} · Компания: ${money(item.price - item.master_payout)}</p>` : ''}
       <div class="detail-grid">
         <div class="detail-item"><small>Клиент</small><strong>${escapeHtml(item.full_name)}</strong></div>
@@ -121,7 +130,10 @@
           <label>Стоимость, ₽<input name="price" type="number" min="1" max="9999999999" step="1" required inputmode="numeric"></label>
           <button type="submit">Добавить к заявке</button>
         </form>` : ''}
-      ${item.completion_status === 'approved' ? `<div class="payment-panel"><h3>Способ оплаты · тестовый режим</h3>${item.payment_method === 'unset' ? `<p>Работа принята. Отметьте способ оплаты клиента. Платёж не проводится.</p><div class="payment-actions"><button type="button" data-payment="${item.id}" data-method="qr">QR</button><button type="button" data-payment="${item.id}" data-method="cash">Наличные получены</button><button type="button" disabled title="Пока не подключён">Безнал — позже</button></div>` : `<p>${item.payment_method === 'cash' ? 'Наличные' : 'QR'} · ${money(item.approved_total ?? item.price)}</p>${item.payment_method === 'cash' ? `<p>Сдать компании ${money(item.cash_due)} до ${escapeHtml(item.cash_due_at)}. Доля мастера ${money(item.approved_payout)} остаётся у вас.</p><p>Статус: ${item.cash_status === 'confirmed' ? 'подтверждено модератором' : item.cash_status === 'reported' ? 'ожидает подтверждения модератора' : 'ожидает сдачи'}</p>${item.cash_status === 'due' ? `<button type="button" data-report-cash="${item.id}">Сообщить о сдаче наличных</button>` : ''}` : '<p>QR выбран; зачисление не производится автоматически.</p>'}`}</div>` : ''}
+      ${item.assigned_to && item.completion_status === 'none' && !item.work_started_at ? `<button class="detail-primary" type="button" data-start="${item.id}">Начать работу</button>` : ''}
+      ${!item.assigned_to ? `<button class="detail-primary" type="button" data-claim="${item.id}">Взять заявку</button>` : ''}
+      ${item.assigned_to && item.work_started_at && ['none', 'rejected'].includes(item.completion_status) ? `<button class="detail-primary" type="button" data-complete="${item.id}">${item.completion_status === 'rejected' ? 'Отправить исправленный отчёт' : 'Сдать отчёт'}</button>` : ''}
+      ${item.completion_status === 'approved' ? `<div class="payment-panel"><h3>Оплата · тестовый режим</h3>${item.payment_method === 'unset' ? `<p>Уточните у клиента способ оплаты. Выбор способа не отмечает оплату.</p><div class="payment-actions"><button type="button" data-payment="${item.id}" data-method="qr">QR</button><button type="button" data-payment="${item.id}" data-method="cash">Наличные</button><button type="button" disabled title="Пока не подключён">Безнал</button></div>` : `<p>${item.payment_method === 'cash' ? 'Наличные' : 'QR'} · ${money(item.approved_total ?? item.price)}</p>${item.payment_method === 'qr' ? `<div class="demo-qr"><img src="/masters/api/requests/${item.id}/payment/qr/" alt="Тестовый QR для заявки № ${item.id}" loading="lazy"><small>Демонстрационный QR. Реальная оплата через него недоступна.</small></div>` : ''}${!item.payment_confirmed_at ? `<button type="button" data-confirm-payment="${item.id}">${item.payment_method === 'cash' ? 'Наличные получены' : 'Клиент оплатил · тест'}</button>` : `<p>Оплата отмечена ${escapeHtml(item.payment_confirmed_at)} · тест</p>`}${item.payment_method === 'cash' && item.payment_confirmed_at ? `<p>Доля компании к сдаче: ${money(item.cash_due)} до ${escapeHtml(item.cash_due_at)}. Доля мастера ${money(item.approved_payout)} остаётся у вас.</p><p>Сдача: ${item.cash_status === 'confirmed' ? 'подтверждена модератором' : item.cash_status === 'reported' ? 'ожидает подтверждения модератора' : 'ожидается'}</p>${item.cash_status === 'due' ? `<button type="button" data-report-cash="${item.id}">Сообщить о сдаче наличных</button>` : ''}` : ''}`}</div>` : ''}
       ${item.completion_status !== 'none' && item.completion_comment ? `<div class="detail-list"><h3>Комментарий модератору</h3><p>${escapeHtml(item.completion_comment)}</p></div>` : ''}
       ${item.completion_status !== 'none' && (item.completion_photo || item.completion_media.length) ? `<div class="detail-list"><h3>Материалы выполнения</h3><div class="detail-media">${item.completion_photo ? `<a href="${escapeHtml(item.completion_photo)}" target="_blank" rel="noopener">Фото 1</a>` : ''}${item.completion_media.map((media, index) => `<a href="${escapeHtml(media.url)}" target="_blank" rel="noopener">${media.kind === 'video' ? 'Видео' : 'Фото'} ${index + 2}</a>`).join('')}</div></div>` : ''}
       <a class="detail-phone" href="tel:${escapeHtml(item.phone)}">Позвонить: ${escapeHtml(item.phone)}</a>`;
@@ -177,6 +189,13 @@
   completionDialog.addEventListener('click', (event) => { if (event.target === completionDialog) completionDialog.close(); });
 
   document.addEventListener('click', async (event) => {
+    const confirm = event.target.closest('[data-confirm-payment]');
+    if (confirm) {
+      confirm.disabled = true;
+      try { await post(`/masters/api/requests/${confirm.dataset.confirmPayment}/payment/confirm/`); await loadRequests(); openDetails(findRequest(confirm.dataset.confirmPayment)); showToast('Оплата отмечена в тестовом режиме'); }
+      catch (error) { showToast(error.message); confirm.disabled = false; }
+      return;
+    }
     const payment = event.target.closest('[data-payment]');
     if (payment) {
       payment.disabled = true;
@@ -220,11 +239,24 @@
       catch (error) { showToast(error.message); await loadRequests(); }
       return;
     }
+    const start = event.target.closest('[data-start]');
+    if (start) {
+      start.disabled = true;
+      try { await post(`/masters/api/requests/${start.dataset.start}/start/`); await loadRequests(); if (dialog.open) openDetails(findRequest(start.dataset.start)); showToast('Заявка в работе'); }
+      catch (error) { showToast(error.message); start.disabled = false; }
+      return;
+    }
     const complete = event.target.closest('[data-complete]');
     if (complete && !complete.disabled) {
+      if (dialog.open) dialog.close();
       completionForm.reset();
       completionForm.dataset.requestId = complete.dataset.complete;
       completionDialog.showModal();
+      return;
+    }
+    if (event.target.closest('.request-card') && !event.target.closest('button, a')) {
+      const card = event.target.closest('.request-card');
+      openDetails(findRequest(card.querySelector('[data-details]').dataset.details));
     }
   });
 
@@ -268,6 +300,15 @@
 
   document.querySelector('.dialog-close').addEventListener('click', () => dialog.close());
   dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
+
+  document.querySelectorAll('[data-mine-filter]').forEach((button) => button.addEventListener('click', () => {
+    state.mineFilter = button.dataset.mineFilter;
+    document.querySelectorAll('[data-mine-filter]').forEach((item) => {
+      item.classList.toggle('is-active', item === button);
+      item.setAttribute('aria-pressed', String(item === button));
+    });
+    render();
+  }));
 
   document.querySelectorAll('[data-tab]').forEach((button) => {
     button.addEventListener('click', () => {

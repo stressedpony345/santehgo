@@ -98,24 +98,24 @@ class CompletionMediaInline(admin.TabularInline):
 class ServiceRequestAdmin(admin.ModelAdmin):
     inlines = (ExtraWorkInline, CompletionMediaInline)
     list_display = (
-        'full_name', 'phone', 'issue', 'assigned_to', 'completion_status',
+        'full_name', 'phone', 'issue', 'assigned_to', 'work_started_at', 'completion_status',
         'order_total', 'master_amount', 'created_at', 'completion_photo_preview', 'services_preview',
     )
     list_filter = ('completion_status', 'assigned_to', 'created_at', 'preferred_time')
     search_fields = ('full_name', 'phone', 'issue', 'address', 'subcategories__name')
     filter_horizontal = ('subcategories', 'works')
     readonly_fields = (
-        'created_at', 'assigned_at', 'completion_requested_at',
+        'created_at', 'assigned_at', 'work_started_at', 'payment_confirmed_at', 'completion_requested_at',
         'completion_reviewed_at', 'completion_reviewed_by', 'completion_photo_preview',
         'approved_total', 'approved_payout', 'cash_status', 'cash_due_at', 'cash_reported_at', 'cash_confirmed_at',
         'completion_status', 'payment_method',
     )
     fields = (
         'full_name', 'phone', 'issue', 'address', 'preferred_time',
-        'subcategories', 'works', 'assigned_to', 'assigned_at', 'created_at',
+        'subcategories', 'works', 'assigned_to', 'assigned_at', 'work_started_at', 'created_at',
         'master_share_percent', 'approved_total', 'approved_payout',
         'completion_status', 'completion_photo', 'completion_photo_preview', 'completion_comment',
-        'payment_method', 'cash_status', 'cash_due_at', 'cash_reported_at', 'cash_confirmed_at',
+        'payment_method', 'payment_confirmed_at', 'cash_status', 'cash_due_at', 'cash_reported_at', 'cash_confirmed_at',
         'completion_requested_at', 'completion_reviewed_at', 'completion_reviewed_by',
     )
     actions = ('approve_completion', 'reject_completion', 'confirm_cash')

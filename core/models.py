@@ -124,7 +124,8 @@ class ServiceRequest(models.Model):
         blank=True,
         null=True,
     )
-    assigned_at = models.DateTimeField('Взята в работу', blank=True, null=True)
+    assigned_at = models.DateTimeField('Передана мастеру', blank=True, null=True)
+    work_started_at = models.DateTimeField('Мастер начал работу', blank=True, null=True)
     completion_status = models.CharField(
         'Статус завершения',
         max_length=16,
@@ -146,6 +147,7 @@ class ServiceRequest(models.Model):
     approved_total = models.DecimalField('Подтверждённая стоимость, ₽', max_digits=12, decimal_places=0, null=True, blank=True)
     approved_payout = models.DecimalField('Подтверждено мастеру, ₽', max_digits=12, decimal_places=0, null=True, blank=True)
     payment_method = models.CharField('Способ оплаты (тест)', max_length=8, choices=PaymentMethod.choices, default=PaymentMethod.UNSET)
+    payment_confirmed_at = models.DateTimeField('Оплата отмечена (тест)', null=True, blank=True)
     cash_status = models.CharField('Сдача наличных', max_length=12, choices=CashStatus.choices, default=CashStatus.NONE)
     cash_due_at = models.DateTimeField('Сдать наличные до', null=True, blank=True)
     cash_reported_at = models.DateTimeField('Сообщено о сдаче наличных', null=True, blank=True)

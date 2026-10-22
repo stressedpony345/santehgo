@@ -1,5 +1,5 @@
-const CACHE = 'santehgo-master-v7';
-const SHELL = ['/masters/', '/static/core/css/masters.css?v=7', '/static/core/js/install-pwa.js?v=2', '/static/core/js/masters.js?v=6', '/static/core/img/logo.svg?v=2', '/static/core/img/pwa-icon-192.png?v=3'];
+const CACHE = 'santehgo-master-v8';
+const SHELL = ['/masters/', '/static/core/css/masters.css?v=8', '/static/core/css/masters-flow.css?v=1', '/static/core/js/install-pwa.js?v=2', '/static/core/js/masters.js?v=7', '/static/core/img/logo.svg?v=2', '/static/core/img/pwa-icon-192.png?v=3'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
