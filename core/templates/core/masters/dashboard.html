@@ -11,7 +11,7 @@
   <link rel="manifest" href="{% url 'master_manifest' %}">
   <link rel="apple-touch-icon" href="{% static 'core/img/pwa-icon-192.png' %}?v=3">
   <link rel="stylesheet" href="{% static 'core/css/fonts.css' %}?v=1">
-  <link rel="stylesheet" href="{% static 'core/css/masters.css' %}?v=5">
+  <link rel="stylesheet" href="{% static 'core/css/masters.css' %}?v=7">
 </head>
 <body class="master-app">
   <header class="app-header">
@@ -37,12 +37,16 @@
     </section>
 
     <section class="app-view" data-view="income" hidden>
-      <div class="view-head"><div><p class="view-kicker">Финансы</p><h1>Доход</h1></div><span class="soon-badge">В разработке</span></div>
-      <div class="income-preview" aria-disabled="true">
-        <div class="income-lock">🔒</div>
-        <p>Ваш доход за месяц</p><strong>84 600 ₽</strong><small>Пример будущего раздела</small>
-        <div class="income-bars"><i style="height:35%"></i><i style="height:58%"></i><i style="height:46%"></i><i style="height:82%"></i><i style="height:67%"></i><i style="height:92%"></i><i style="height:74%"></i></div>
+      <div class="view-head"><div><p class="view-kicker">Финансы и эффективность</p><h1>Доход</h1></div><span class="soon-badge">Выплаты: тестовый режим</span></div>
+      <p class="income-explainer">Доход считается только по принятым модератором работам. От стоимости заявки 40% получает мастер, 60% — компания. Днём заработка считается день подтверждения.</p>
+      <div class="income-summary" id="income-summary" aria-live="polite"></div>
+      <div class="income-layout">
+        <section class="income-panel"><h2>Динамика за 14 дней</h2><div class="income-chart" id="income-chart"></div><p class="income-hint">Суммы отражают подтверждённый заработок, а не оборот.</p></section>
+        <section class="income-panel"><h2>Эффективность</h2><div id="income-efficiency"></div><p class="income-hint">Доля принятых = принятые / (принятые + отклонённые). Заявки в работе не участвуют.</p></section>
       </div>
+      <section class="income-panel income-withdraw"><h2>Вывод средств</h2><div id="income-withdrawal"></div></section>
+      <section class="income-panel"><h2>Последние подтверждённые заявки</h2><div id="income-recent"></div></section>
+      <section class="income-panel"><h2>История заявок на вывод</h2><div id="income-history"></div></section>
     </section>
 
     <section class="app-view" data-view="profile" hidden>
@@ -67,7 +71,7 @@
   <nav class="app-nav" aria-label="Разделы приложения">
     <button class="is-active" type="button" data-tab="available"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 9h8M8 13h5"/></svg><small>Заявки</small><b id="nav-badge">0</b></button>
     <button type="button" data-tab="mine"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h10v14H5V9zM9 5v4H5M9 13h6M9 16h4"/></svg><small>Мои</small></button>
-    <button type="button" data-tab="income"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/></svg><small>Доход</small><i>Скоро</i></button>
+    <button type="button" data-tab="income"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/></svg><small>Доход</small></button>
     <button type="button" data-tab="profile"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c.8-4 3.5-6 8-6s7.2 2 8 6"/></svg><small>Профиль</small></button>
   </nav>
 
@@ -77,8 +81,22 @@
       <div id="dialog-content"></div>
     </div>
   </dialog>
+  <dialog class="request-dialog" id="completion-dialog">
+    <div class="dialog-sheet">
+      <button class="dialog-close" type="button" data-close-completion aria-label="Закрыть">×</button>
+      <h2>Отправить работу на проверку</h2>
+      <p class="income-hint">Добавьте фото результата (обязательно), при необходимости видео и комментарий модератору. После отправки состав работ менять нельзя.</p>
+      <form id="completion-form">
+        <label>Фото результата — от 1 до 6<input type="file" name="photos" accept="image/jpeg,image/png,image/webp" multiple required></label>
+        <label>Видео — до 2 файлов MP4 или WebM<input type="file" name="videos" accept="video/mp4,video/webm" multiple></label>
+        <label>Комментарий модератору<textarea name="comment" maxlength="2000" rows="4" placeholder="Что выполнено, на что обратить внимание"></textarea></label>
+        <p class="income-hint">До 10 МБ на фото, до 50 МБ на видео, всего до 120 МБ.</p>
+        <button type="submit">Отправить на проверку</button>
+      </form>
+    </div>
+  </dialog>
   <div class="app-toast" id="app-toast" hidden></div>
   <script src="{% static 'core/js/install-pwa.js' %}?v=2" defer></script>
-  <script src="{% static 'core/js/masters.js' %}?v=4" defer></script>
+  <script src="{% static 'core/js/masters.js' %}?v=6" defer></script>
 </body>
 </html>

@@ -4,12 +4,15 @@ import base64
 import threading
 import urllib.error
 import urllib.request
+from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import login, logout, update_session_auth_hash
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
 from django.db import close_old_connections, transaction
+from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -17,7 +20,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import Category, PushSubscription, ServiceRequest, SubCategory, Work
+from .models import Category, CompletionMedia, ExtraWork, PushSubscription, ServiceRequest, SubCategory, WithdrawalRequest, Work
 
 
 master_required = user_passes_test(lambda user: user.is_active and user.is_staff, login_url='/masters/login/')
@@ -48,10 +51,7 @@ def _vapid_keys():
 
 
 def _request_price(service_request):
-    works = list(service_request.works.all())
-    if works:
-        return int(sum((work.price for work in works), 0))
-    return int(sum((service.approximate_price for service in service_request.subcategories.all()), 0))
+    return int(service_request.approved_total if service_request.approved_total is not None else service_request.total_price)
 
 
 def _request_payload(service_request):
@@ -72,11 +72,27 @@ def _request_payload(service_request):
         'preferred_time': service_request.preferred_time,
         'created_at': timezone.localtime(service_request.created_at).strftime('%d.%m.%Y, %H:%M'),
         'price': _request_price(service_request),
+        'master_payout': int(service_request.master_payout),
+        'approved_total': int(service_request.approved_total) if service_request.approved_total is not None else None,
+        'approved_payout': int(service_request.approved_payout) if service_request.approved_payout is not None else None,
+        'payment_method': service_request.payment_method,
+        'cash_status': service_request.cash_status,
+        'cash_due_at': timezone.localtime(service_request.cash_due_at).strftime('%d.%m.%Y, %H:%M') if service_request.cash_due_at else '',
+        'cash_due': int((service_request.approved_total or 0) - (service_request.approved_payout or 0)) if service_request.payment_method == ServiceRequest.PaymentMethod.CASH else 0,
         'works': works,
+        'extra_works': [
+            {'id': item.id, 'name': item.name, 'price': int(item.price)}
+            for item in service_request.extra_works.all()
+        ],
         'services': services,
         'is_processed': service_request.is_processed,
         'completion_status': service_request.completion_status,
         'completion_photo': service_request.completion_photo.url if service_request.completion_photo else '',
+        'completion_comment': service_request.completion_comment,
+        'completion_media': [
+            {'kind': media.kind, 'url': media.file.url}
+            for media in service_request.completion_media.all()
+        ],
         'assigned_to': service_request.assigned_to_id,
         'assigned_name': service_request.assigned_to.get_full_name() or service_request.assigned_to.username if service_request.assigned_to else '',
     }
@@ -315,12 +331,12 @@ def master_service_worker(request):
 @master_required
 def master_requests_api(request):
     queryset = ServiceRequest.objects.select_related('assigned_to').prefetch_related(
-        'works', 'subcategories__category'
+        'works', 'subcategories__category', 'extra_works', 'completion_media'
     )
     available = queryset.filter(is_processed=False, assigned_to__isnull=True)
     mine = queryset.filter(assigned_to=request.user)
     approved_income = sum(
-        _request_price(item)
+        int(item.master_payout)
         for item in mine
         if item.completion_status == ServiceRequest.CompletionStatus.APPROVED
     )
@@ -335,6 +351,102 @@ def master_requests_api(request):
             'name': request.user.get_full_name() or request.user.username,
         },
     })
+
+
+def _earnings_data(user):
+    today = timezone.localdate()
+    mine = list(ServiceRequest.objects.filter(assigned_to=user).prefetch_related('works', 'subcategories', 'extra_works'))
+    approved = [item for item in mine if item.completion_status == ServiceRequest.CompletionStatus.APPROVED]
+    def reviewed_date(item):
+        return timezone.localtime(item.completion_reviewed_at or item.created_at).date()
+    this_month = [item for item in approved if (reviewed_date(item).year, reviewed_date(item).month) == (today.year, today.month)]
+    today_items = [item for item in approved if reviewed_date(item) == today]
+    withdrawals = list(WithdrawalRequest.objects.filter(master=user).select_related('reviewed_by'))
+    qr_earned = sum(int(item.master_payout) for item in approved if item.payment_method == ServiceRequest.PaymentMethod.QR)
+    reserved = sum(int(item.amount) for item in withdrawals if item.status != WithdrawalRequest.Status.REJECTED)
+    cash = [item for item in approved if item.payment_method == ServiceRequest.PaymentMethod.CASH]
+    cash_due = sum(int((item.approved_total or 0) - (item.approved_payout or 0)) for item in cash if item.cash_status != ServiceRequest.CashStatus.CONFIRMED)
+    cash_overdue = sum(item.cash_due_at is not None and item.cash_due_at < timezone.now() and item.cash_status != ServiceRequest.CashStatus.CONFIRMED for item in cash)
+    days = []
+    for offset in range(13, -1, -1):
+        date = today - timedelta(days=offset)
+        items = [item for item in approved if reviewed_date(item) == date]
+        days.append({'date': date.strftime('%d.%m'), 'amount': sum(int(item.master_payout) for item in items), 'count': len(items)})
+    return {
+        'today': {'earned': sum(int(item.master_payout) for item in today_items), 'count': len(today_items), 'turnover': sum(int(item.approved_total or item.total_price) for item in today_items)},
+        'month': {'earned': sum(int(item.master_payout) for item in this_month), 'count': len(this_month), 'turnover': sum(int(item.approved_total or item.total_price) for item in this_month)},
+        'all_time': {'earned': sum(int(item.master_payout) for item in approved), 'count': len(approved)},
+        'in_progress': sum(item.completion_status in (ServiceRequest.CompletionStatus.NONE, ServiceRequest.CompletionStatus.REJECTED) for item in mine),
+        'pending': sum(item.completion_status == ServiceRequest.CompletionStatus.PENDING for item in mine),
+        'average_payout': round(sum(int(item.master_payout) for item in approved) / len(approved)) if approved else 0,
+        'approval_rate': round(100 * len(approved) / (len(approved) + sum(item.completion_status == ServiceRequest.CompletionStatus.REJECTED for item in mine))) if approved or any(item.completion_status == ServiceRequest.CompletionStatus.REJECTED for item in mine) else 0,
+        'cash_due': cash_due,
+        'cash_count': sum(item.cash_status == ServiceRequest.CashStatus.DUE for item in cash),
+        'cash_overdue': cash_overdue,
+        'available': max(0, qr_earned - reserved),
+        'is_monday': today.weekday() == 0,
+        'days': days,
+        'withdrawals': [{'id': item.id, 'amount': int(item.amount), 'status': item.status, 'created_at': timezone.localtime(item.created_at).strftime('%d.%m.%Y')} for item in withdrawals[:10]],
+        'recent': [{'id': item.id, 'date': reviewed_date(item).strftime('%d.%m.%Y'), 'total': int(item.approved_total or item.total_price), 'payout': int(item.master_payout), 'payment_method': item.payment_method} for item in sorted(approved, key=lambda item: item.completion_reviewed_at or item.created_at, reverse=True)[:12]],
+    }
+
+
+@require_GET
+@master_required
+def master_earnings_api(request):
+    return JsonResponse(_earnings_data(request.user))
+
+
+@require_POST
+@master_required
+def master_request_withdrawal(request):
+    if timezone.localdate().weekday() != 0:
+        return JsonResponse({'ok': False, 'error': 'Заявку на вывод можно подать только в понедельник'}, status=403)
+    with transaction.atomic():
+        # Lock the master row so simultaneous requests cannot reserve the same balance twice.
+        get_user_model().objects.select_for_update().get(pk=request.user.pk)
+        available = _earnings_data(request.user)['available']
+        if available <= 0:
+            return JsonResponse({'ok': False, 'error': 'Нет доступной суммы для вывода: нужны подтверждённые QR-заявки'}, status=409)
+        withdrawal = WithdrawalRequest.objects.create(master=request.user, amount=available)
+    return JsonResponse({'ok': True, 'id': withdrawal.pk, 'amount': available})
+
+
+@require_POST
+@master_required
+def master_choose_payment(request, request_id):
+    try:
+        method = json.loads(request.body).get('method')
+    except (ValueError, AttributeError):
+        method = None
+    # Future payment integration: verify the provider transaction before posting
+    # any real balance. BANK deliberately stays disabled until then.
+    if method not in (ServiceRequest.PaymentMethod.QR, ServiceRequest.PaymentMethod.CASH):
+        return JsonResponse({'ok': False, 'error': 'Выберите QR или наличные; безнал пока не подключён'}, status=400)
+    with transaction.atomic():
+        item = get_object_or_404(ServiceRequest.objects.select_for_update(), pk=request_id, assigned_to=request.user)
+        if item.completion_status != ServiceRequest.CompletionStatus.APPROVED:
+            return JsonResponse({'ok': False, 'error': 'Сначала модератор должен принять работу'}, status=409)
+        if item.payment_method != ServiceRequest.PaymentMethod.UNSET:
+            return JsonResponse({'ok': False, 'error': 'Способ оплаты уже выбран; для исправления обратитесь к модератору'}, status=409)
+        item.payment_method = method
+        item.cash_status = ServiceRequest.CashStatus.DUE if method == ServiceRequest.PaymentMethod.CASH else ServiceRequest.CashStatus.NONE
+        item.cash_due_at = timezone.localtime().replace(hour=23, minute=59, second=59, microsecond=0) if method == ServiceRequest.PaymentMethod.CASH else None
+        item.save(update_fields=('payment_method', 'cash_status', 'cash_due_at'))
+    return JsonResponse({'ok': True})
+
+
+@require_POST
+@master_required
+def master_report_cash(request, request_id):
+    with transaction.atomic():
+        item = get_object_or_404(ServiceRequest.objects.select_for_update(), pk=request_id, assigned_to=request.user)
+        if item.payment_method != ServiceRequest.PaymentMethod.CASH or item.cash_status != ServiceRequest.CashStatus.DUE:
+            return JsonResponse({'ok': False, 'error': 'Нет ожидающей сдачи наличных'}, status=409)
+        item.cash_status = ServiceRequest.CashStatus.REPORTED
+        item.cash_reported_at = timezone.now()
+        item.save(update_fields=('cash_status', 'cash_reported_at'))
+    return JsonResponse({'ok': True})
 
 
 @require_POST
@@ -352,37 +464,108 @@ def master_claim_request(request, request_id):
     return JsonResponse({'ok': True})
 
 
+@require_GET
+@master_required
+def master_work_search(request):
+    query = request.GET.get('q', '').strip()[:100]
+    if len(query) < 2:
+        return JsonResponse({'works': []})
+    works = Work.objects.filter(is_active=True, service__is_active=True, service__category__is_active=True).filter(
+        Q(name__icontains=query) | Q(service__name__icontains=query)
+    ).select_related('service').order_by('service__name', 'name')[:30]
+    return JsonResponse({'works': [
+        {'id': work.id, 'name': work.name, 'service': work.service.name, 'price': int(work.price)}
+        for work in works
+    ]})
+
+
+@require_POST
+@master_required
+def master_add_extra_work(request, request_id):
+    try:
+        data = json.loads(request.body)
+        if not isinstance(data, dict):
+            raise ValueError
+    except (ValueError, UnicodeDecodeError):
+        return JsonResponse({'ok': False, 'error': 'Некорректные данные работы'}, status=400)
+    work_id = data.get('work_id')
+    if work_id is not None:
+        if isinstance(work_id, bool) or not str(work_id).isdigit():
+            return JsonResponse({'ok': False, 'error': 'Выберите работу из каталога'}, status=400)
+        work = Work.objects.filter(pk=work_id, is_active=True, service__is_active=True, service__category__is_active=True).first()
+        if not work:
+            return JsonResponse({'ok': False, 'error': 'Работа больше не доступна в каталоге'}, status=400)
+        name, price = work.name, work.price
+    else:
+        name = data.get('name')
+        price = data.get('price')
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 180:
+            return JsonResponse({'ok': False, 'error': 'Укажите название работы (до 180 символов)'}, status=400)
+        if isinstance(price, bool) or not str(price).isdigit() or not 0 < int(price) <= 9999999999:
+            return JsonResponse({'ok': False, 'error': 'Укажите стоимость в целых рублях больше нуля'}, status=400)
+        name, price = name.strip(), int(price)
+    with transaction.atomic():
+        service_request = get_object_or_404(ServiceRequest.objects.select_for_update(), pk=request_id, assigned_to=request.user)
+        if service_request.is_processed or service_request.completion_status in (
+            ServiceRequest.CompletionStatus.PENDING, ServiceRequest.CompletionStatus.APPROVED,
+        ):
+            return JsonResponse({'ok': False, 'error': 'Состав завершённой заявки изменить нельзя'}, status=409)
+        extra = ExtraWork.objects.create(service_request=service_request, added_by=request.user, name=name, price=price)
+    return JsonResponse({'ok': True, 'id': extra.id, 'price': _request_price(service_request)})
+
+
 @require_POST
 @master_required
 def master_complete_request(request, request_id):
     from PIL import Image, UnidentifiedImageError
 
-    service_request = get_object_or_404(ServiceRequest, pk=request_id, assigned_to=request.user)
-    if service_request.completion_status == ServiceRequest.CompletionStatus.PENDING:
-        return JsonResponse({'ok': False, 'error': 'Заявка уже находится на рассмотрении'}, status=409)
-    if service_request.completion_status == ServiceRequest.CompletionStatus.APPROVED:
-        return JsonResponse({'ok': False, 'error': 'Заявка уже завершена'}, status=409)
-    photo = request.FILES.get('photo')
-    if not photo:
-        return JsonResponse({'ok': False, 'error': 'Сделайте фото выполненной работы'}, status=400)
-    if photo.size > 10 * 1024 * 1024:
-        return JsonResponse({'ok': False, 'error': 'Фото должно быть меньше 10 МБ'}, status=400)
-    try:
-        image = Image.open(photo)
-        image.verify()
-        photo.seek(0)
-    except (UnidentifiedImageError, OSError):
-        return JsonResponse({'ok': False, 'error': 'Не удалось прочитать изображение'}, status=400)
-    service_request.completion_photo = photo
-    service_request.completion_status = ServiceRequest.CompletionStatus.PENDING
-    service_request.completion_requested_at = timezone.now()
-    service_request.completion_reviewed_at = None
-    service_request.completion_reviewed_by = None
-    service_request.is_processed = False
-    service_request.save(update_fields=(
-        'completion_photo', 'completion_status', 'completion_requested_at',
-        'completion_reviewed_at', 'completion_reviewed_by', 'is_processed',
-    ))
+    photos = request.FILES.getlist('photos') or ([request.FILES['photo']] if 'photo' in request.FILES else [])
+    videos = request.FILES.getlist('videos')
+    comment = request.POST.get('comment', '').strip()
+    if not photos or len(photos) > 6 or len(videos) > 2:
+        return JsonResponse({'ok': False, 'error': 'Добавьте от 1 до 6 фото и не более 2 видео'}, status=400)
+    if len(comment) > 2000:
+        return JsonResponse({'ok': False, 'error': 'Комментарий не должен превышать 2000 символов'}, status=400)
+    if sum(file.size for file in photos + videos) > 120 * 1024 * 1024:
+        return JsonResponse({'ok': False, 'error': 'Общий размер файлов не должен превышать 120 МБ'}, status=400)
+    for photo in photos:
+        if photo.size > 10 * 1024 * 1024:
+            return JsonResponse({'ok': False, 'error': 'Каждое фото должно быть меньше 10 МБ'}, status=400)
+        try:
+            image = Image.open(photo)
+            image.verify()
+            if image.format not in ('JPEG', 'PNG', 'WEBP') or not photo.name.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                raise ValueError
+            photo.seek(0)
+        except (UnidentifiedImageError, OSError, ValueError):
+            return JsonResponse({'ok': False, 'error': 'Допустимы только фото JPEG, PNG или WebP'}, status=400)
+    for video in videos:
+        if video.size > 50 * 1024 * 1024:
+            return JsonResponse({'ok': False, 'error': 'Каждое видео должно быть меньше 50 МБ'}, status=400)
+        header = video.read(12)
+        video.seek(0)
+        if not ((header[4:8] == b'ftyp' and video.name.lower().endswith('.mp4')) or (header.startswith(b'\x1a\x45\xdf\xa3') and video.name.lower().endswith('.webm'))):
+            return JsonResponse({'ok': False, 'error': 'Допустимы только видео MP4 или WebM'}, status=400)
+    with transaction.atomic():
+        service_request = get_object_or_404(ServiceRequest.objects.select_for_update(), pk=request_id, assigned_to=request.user)
+        if service_request.completion_status in (ServiceRequest.CompletionStatus.PENDING, ServiceRequest.CompletionStatus.APPROVED):
+            return JsonResponse({'ok': False, 'error': 'Заявка уже отправлена на рассмотрение или завершена'}, status=409)
+        service_request.completion_photo = photos[0]
+        service_request.completion_comment = comment
+        service_request.completion_status = ServiceRequest.CompletionStatus.PENDING
+        service_request.completion_requested_at = timezone.now()
+        service_request.completion_reviewed_at = None
+        service_request.completion_reviewed_by = None
+        service_request.is_processed = False
+        service_request.save(update_fields=(
+            'completion_photo', 'completion_comment', 'completion_status', 'completion_requested_at',
+            'completion_reviewed_at', 'completion_reviewed_by', 'is_processed',
+        ))
+        service_request.completion_media.all().delete()
+        for file in photos[1:]:
+            CompletionMedia.objects.create(service_request=service_request, file=file, kind='photo')
+        for file in videos:
+            CompletionMedia.objects.create(service_request=service_request, file=file, kind='video')
     return JsonResponse({'ok': True, 'status': service_request.completion_status})
 
 

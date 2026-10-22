@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.db import models
+from decimal import Decimal, ROUND_HALF_UP
+from django.core.validators import MaxValueValidator, MinValueValidator
 
 
 class Category(models.Model):
@@ -77,6 +79,18 @@ class Work(models.Model):
 
 
 class ServiceRequest(models.Model):
+    class PaymentMethod(models.TextChoices):
+        UNSET = 'unset', 'Не выбран'
+        QR = 'qr', 'QR (тест)'
+        CASH = 'cash', 'Наличные (тест)'
+        BANK = 'bank', 'Безнал (позже)'
+
+    class CashStatus(models.TextChoices):
+        NONE = 'none', 'Не требуется'
+        DUE = 'due', 'Сдать до конца дня'
+        REPORTED = 'reported', 'Мастер сообщил о сдаче'
+        CONFIRMED = 'confirmed', 'Подтверждено модератором'
+
     class CompletionStatus(models.TextChoices):
         NONE = 'none', 'Не отправлена'
         PENDING = 'pending', 'На рассмотрении'
@@ -124,6 +138,18 @@ class ServiceRequest(models.Model):
         blank=True,
         null=True,
     )
+    completion_comment = models.TextField('Комментарий модератору', blank=True)
+    master_share_percent = models.DecimalField(
+        'Доля мастера, %', max_digits=5, decimal_places=2, default=40,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+    )
+    approved_total = models.DecimalField('Подтверждённая стоимость, ₽', max_digits=12, decimal_places=0, null=True, blank=True)
+    approved_payout = models.DecimalField('Подтверждено мастеру, ₽', max_digits=12, decimal_places=0, null=True, blank=True)
+    payment_method = models.CharField('Способ оплаты (тест)', max_length=8, choices=PaymentMethod.choices, default=PaymentMethod.UNSET)
+    cash_status = models.CharField('Сдача наличных', max_length=12, choices=CashStatus.choices, default=CashStatus.NONE)
+    cash_due_at = models.DateTimeField('Сдать наличные до', null=True, blank=True)
+    cash_reported_at = models.DateTimeField('Сообщено о сдаче наличных', null=True, blank=True)
+    cash_confirmed_at = models.DateTimeField('Сдача наличных подтверждена', null=True, blank=True)
     completion_requested_at = models.DateTimeField('Отправлена на модерацию', blank=True, null=True)
     completion_reviewed_at = models.DateTimeField('Проверена администратором', blank=True, null=True)
     completion_reviewed_by = models.ForeignKey(
@@ -146,9 +172,66 @@ class ServiceRequest(models.Model):
     @property
     def total_price(self):
         works = list(self.works.all())
+        extras = sum((item.price for item in self.extra_works.all()), 0)
         if works:
-            return sum((work.price for work in works), 0)
-        return sum((service.approximate_price for service in self.subcategories.all()), 0)
+            return sum((work.price for work in works), 0) + extras
+        return sum((service.approximate_price for service in self.subcategories.all()), 0) + extras
+
+    @property
+    def master_payout(self):
+        if self.approved_payout is not None:
+            return self.approved_payout
+        return (Decimal(self.total_price) * self.master_share_percent / 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+
+    def freeze_amounts(self):
+        self.approved_total = self.total_price
+        self.approved_payout = (Decimal(self.approved_total) * self.master_share_percent / 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+
+
+class CompletionMedia(models.Model):
+    service_request = models.ForeignKey(ServiceRequest, on_delete=models.CASCADE, related_name='completion_media')
+    file = models.FileField('Фото или видео', upload_to='completed/%Y/%m/')
+    kind = models.CharField('Тип', max_length=5, choices=[('photo', 'Фото'), ('video', 'Видео')])
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Материал выполнения'
+        verbose_name_plural = 'Материалы выполнения'
+
+
+class WithdrawalRequest(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Ожидает модератора'
+        APPROVED = 'approved', 'Подтверждена (тест)'
+        REJECTED = 'rejected', 'Отклонена'
+
+    master = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='withdrawals')
+    amount = models.DecimalField('Сумма, ₽', max_digits=12, decimal_places=0)
+    status = models.CharField('Статус', max_length=12, choices=Status.choices, default=Status.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='reviewed_withdrawals')
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Заявка на вывод (тест)'
+        verbose_name_plural = 'Заявки на вывод (тест)'
+
+
+class ExtraWork(models.Model):
+    service_request = models.ForeignKey(ServiceRequest, on_delete=models.CASCADE, related_name='extra_works')
+    name = models.CharField('Дополнительная работа', max_length=180)
+    price = models.DecimalField('Стоимость, ₽', max_digits=10, decimal_places=0)
+    added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField('Добавлена', auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+        verbose_name = 'Дополнительная работа'
+        verbose_name_plural = 'Дополнительные работы'
+
+    def __str__(self):
+        return f'{self.name} — {self.price} ₽'
 
 
 class PushSubscription(models.Model):

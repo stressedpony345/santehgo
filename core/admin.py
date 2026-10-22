@@ -1,8 +1,9 @@
 from django.contrib import admin, messages
+from django.db import transaction
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import Category, PushSubscription, ServiceRequest, SubCategory, Work
+from .models import Category, CompletionMedia, ExtraWork, PushSubscription, ServiceRequest, SubCategory, WithdrawalRequest, Work
 
 
 class SubCategoryInline(admin.TabularInline):
@@ -73,11 +74,32 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
     readonly_fields = ('created_at', 'updated_at')
 
 
+class ExtraWorkInline(admin.TabularInline):
+    model = ExtraWork
+    extra = 0
+    readonly_fields = ('name', 'price', 'added_by', 'created_at')
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+class CompletionMediaInline(admin.TabularInline):
+    model = CompletionMedia
+    extra = 0
+    readonly_fields = ('kind', 'file', 'uploaded_at')
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(ServiceRequest)
 class ServiceRequestAdmin(admin.ModelAdmin):
+    inlines = (ExtraWorkInline, CompletionMediaInline)
     list_display = (
         'full_name', 'phone', 'issue', 'assigned_to', 'completion_status',
-        'created_at', 'completion_photo_preview', 'services_preview',
+        'order_total', 'master_amount', 'created_at', 'completion_photo_preview', 'services_preview',
     )
     list_filter = ('completion_status', 'assigned_to', 'created_at', 'preferred_time')
     search_fields = ('full_name', 'phone', 'issue', 'address', 'subcategories__name')
@@ -85,15 +107,27 @@ class ServiceRequestAdmin(admin.ModelAdmin):
     readonly_fields = (
         'created_at', 'assigned_at', 'completion_requested_at',
         'completion_reviewed_at', 'completion_reviewed_by', 'completion_photo_preview',
+        'approved_total', 'approved_payout', 'cash_status', 'cash_due_at', 'cash_reported_at', 'cash_confirmed_at',
+        'completion_status', 'payment_method',
     )
     fields = (
         'full_name', 'phone', 'issue', 'address', 'preferred_time',
         'subcategories', 'works', 'assigned_to', 'assigned_at', 'created_at',
-        'completion_status', 'completion_photo', 'completion_photo_preview',
+        'master_share_percent', 'approved_total', 'approved_payout',
+        'completion_status', 'completion_photo', 'completion_photo_preview', 'completion_comment',
+        'payment_method', 'cash_status', 'cash_due_at', 'cash_reported_at', 'cash_confirmed_at',
         'completion_requested_at', 'completion_reviewed_at', 'completion_reviewed_by',
     )
-    actions = ('approve_completion', 'reject_completion')
+    actions = ('approve_completion', 'reject_completion', 'confirm_cash')
     date_hierarchy = 'created_at'
+
+    @admin.display(description='Стоимость заявки')
+    def order_total(self, obj):
+        return obj.approved_total if obj.approved_total is not None else obj.total_price
+
+    @admin.display(description='Мастеру')
+    def master_amount(self, obj):
+        return obj.master_payout
 
     @admin.display(description='Услуги')
     def services_preview(self, obj):
@@ -118,18 +152,35 @@ class ServiceRequestAdmin(admin.ModelAdmin):
         if not request.user.is_superuser:
             actions.pop('approve_completion', None)
             actions.pop('reject_completion', None)
+            actions.pop('confirm_cash', None)
         return actions
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj and obj.completion_status == ServiceRequest.CompletionStatus.APPROVED:
+            fields.append('master_share_percent')
+        return fields
 
     @admin.action(description='Подтвердить завершение выбранных заявок')
     def approve_completion(self, request, queryset):
-        pending = queryset.filter(completion_status=ServiceRequest.CompletionStatus.PENDING)
-        changed = pending.update(
-            completion_status=ServiceRequest.CompletionStatus.APPROVED,
-            completion_reviewed_at=timezone.now(),
-            completion_reviewed_by=request.user,
-            is_processed=True,
-        )
+        changed = 0
+        with transaction.atomic():
+            for item in queryset.filter(completion_status=ServiceRequest.CompletionStatus.PENDING).select_for_update():
+                item.freeze_amounts()
+                item.completion_status = ServiceRequest.CompletionStatus.APPROVED
+                item.completion_reviewed_at = timezone.now()
+                item.completion_reviewed_by = request.user
+                item.is_processed = True
+                item.save(update_fields=('approved_total', 'approved_payout', 'completion_status', 'completion_reviewed_at', 'completion_reviewed_by', 'is_processed'))
+                changed += 1
         self.message_user(request, f'Подтверждено заявок: {changed}.', messages.SUCCESS)
+
+    @admin.action(description='Подтвердить сдачу наличных')
+    def confirm_cash(self, request, queryset):
+        changed = queryset.filter(payment_method=ServiceRequest.PaymentMethod.CASH, cash_status=ServiceRequest.CashStatus.REPORTED).update(
+            cash_status=ServiceRequest.CashStatus.CONFIRMED, cash_confirmed_at=timezone.now(),
+        )
+        self.message_user(request, f'Подтверждено сдач: {changed}.', messages.SUCCESS)
 
     @admin.action(description='Отклонить фото выбранных заявок')
     def reject_completion(self, request, queryset):
@@ -141,3 +192,35 @@ class ServiceRequestAdmin(admin.ModelAdmin):
             is_processed=False,
         )
         self.message_user(request, f'Отклонено заявок: {changed}.', messages.WARNING)
+
+
+@admin.register(WithdrawalRequest)
+class WithdrawalRequestAdmin(admin.ModelAdmin):
+    list_display = ('master', 'amount', 'status', 'created_at', 'reviewed_at', 'reviewed_by')
+    list_filter = ('status', 'created_at')
+    readonly_fields = ('master', 'amount', 'status', 'created_at', 'reviewed_at', 'reviewed_by')
+    actions = ('approve_withdrawal', 'reject_withdrawal')
+
+    def has_add_permission(self, request):
+        return False
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if not request.user.is_superuser:
+            actions.pop('approve_withdrawal', None)
+            actions.pop('reject_withdrawal', None)
+        return actions
+
+    @admin.action(description='Подтвердить заявки на вывод (тест, без перевода денег)')
+    def approve_withdrawal(self, request, queryset):
+        changed = queryset.filter(status=WithdrawalRequest.Status.PENDING).update(
+            status=WithdrawalRequest.Status.APPROVED, reviewed_at=timezone.now(), reviewed_by=request.user,
+        )
+        self.message_user(request, f'Подтверждено заявок на вывод: {changed}. Перевод денег не производится.', messages.SUCCESS)
+
+    @admin.action(description='Отклонить заявки на вывод')
+    def reject_withdrawal(self, request, queryset):
+        changed = queryset.filter(status=WithdrawalRequest.Status.PENDING).update(
+            status=WithdrawalRequest.Status.REJECTED, reviewed_at=timezone.now(), reviewed_by=request.user,
+        )
+        self.message_user(request, f'Отклонено заявок на вывод: {changed}.', messages.WARNING)
