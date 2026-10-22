@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import TestCase
 from PIL import Image
 
@@ -188,6 +189,18 @@ class MasterAppTests(TestCase):
         self.request_item.refresh_from_db()
         self.client.force_login(self.master)
         return moderator
+
+    def test_admin_request_list_and_detail_render(self):
+        moderator = get_user_model().objects.create_superuser(username='admin-list', password='pass')
+        ServiceRequest.objects.create(phone='+79000000002')
+        ServiceRequest.objects.create(phone='+79000000003', completion_status=ServiceRequest.CompletionStatus.APPROVED, is_processed=True)
+        ServiceRequest.objects.create(phone='+79000000004', completion_status=ServiceRequest.CompletionStatus.PENDING, assigned_to=self.master)
+        self.client.force_login(moderator)
+        listing = self.client.get('/admin/core/servicerequest/')
+        self.assertEqual(listing.status_code, 200)
+        detail = self.client.get(f'/admin/core/servicerequest/{self.request_item.pk}/change/')
+        self.assertEqual(detail.status_code, 200)
+        call_command('check_master_admin')
 
     def test_completion_media_approval_and_frozen_40_percent(self):
         self.client.force_login(self.master)
