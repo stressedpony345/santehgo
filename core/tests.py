@@ -194,13 +194,32 @@ class MasterAppTests(TestCase):
         moderator = get_user_model().objects.create_superuser(username='admin-list', password='pass')
         ServiceRequest.objects.create(phone='+79000000002')
         ServiceRequest.objects.create(phone='+79000000003', completion_status=ServiceRequest.CompletionStatus.APPROVED, is_processed=True)
-        ServiceRequest.objects.create(phone='+79000000004', completion_status=ServiceRequest.CompletionStatus.PENDING, assigned_to=self.master)
+        pending = ServiceRequest.objects.create(phone='+79000000004', completion_status=ServiceRequest.CompletionStatus.PENDING, assigned_to=self.master)
         self.client.force_login(moderator)
         listing = self.client.get('/admin/core/servicerequest/')
         self.assertEqual(listing.status_code, 200)
         detail = self.client.get(f'/admin/core/servicerequest/{self.request_item.pk}/change/')
         self.assertEqual(detail.status_code, 200)
-        call_command('check_master_admin')
+        call_command('check_master_admin', check_approval=True)
+        pending.refresh_from_db()
+        self.assertEqual(pending.completion_status, ServiceRequest.CompletionStatus.PENDING)
+
+    def test_admin_approval_does_not_lock_nullable_master_join(self):
+        from django.contrib import admin
+        from django.test import RequestFactory
+
+        moderator = get_user_model().objects.create_superuser(username='admin-approval', password='pass')
+        self.request_item.completion_status = ServiceRequest.CompletionStatus.PENDING
+        self.request_item.save(update_fields=['completion_status'])
+        request = RequestFactory().post('/admin/core/servicerequest/')
+        request.user = moderator
+        model_admin = admin.site._registry[ServiceRequest]
+        queryset = ServiceRequest.objects.select_related('assigned_to').filter(pk=self.request_item.pk)
+        with patch.object(model_admin, 'message_user'):
+            model_admin.approve_completion(request, queryset)
+        self.request_item.refresh_from_db()
+        self.assertEqual(self.request_item.completion_status, ServiceRequest.CompletionStatus.APPROVED)
+        self.assertEqual(self.request_item.approved_payout, 920)
 
     def test_completion_media_approval_and_frozen_40_percent(self):
         self.client.force_login(self.master)

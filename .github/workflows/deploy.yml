@@ -90,7 +90,7 @@ jobs:
           docker compose build web
           docker compose up -d --remove-orphans
           docker compose exec -T web python manage.py check
-          docker compose exec -T web python manage.py check_master_admin
+          docker compose exec -T web python manage.py check_master_admin --check-approval
           docker compose ps
           REMOTE
 

@@ -165,7 +165,12 @@ class ServiceRequestAdmin(admin.ModelAdmin):
     def approve_completion(self, request, queryset):
         changed = 0
         with transaction.atomic():
-            for item in queryset.filter(completion_status=ServiceRequest.CompletionStatus.PENDING).select_for_update():
+            selected_ids = queryset.values_list('pk', flat=True)
+            pending = ServiceRequest.objects.filter(
+                pk__in=selected_ids,
+                completion_status=ServiceRequest.CompletionStatus.PENDING,
+            ).select_for_update()
+            for item in pending:
                 item.freeze_amounts()
                 item.completion_status = ServiceRequest.CompletionStatus.APPROVED
                 item.completion_reviewed_at = timezone.now()
