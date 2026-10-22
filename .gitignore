@@ -16,3 +16,9 @@ media/
 .artifact-node/
 outputs/
 .env
+.venv-e2e/
+.tmp/
+node_modules/
+.pnpm-store/
+playwright-report/
+test-results/

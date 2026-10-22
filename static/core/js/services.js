@@ -47,6 +47,68 @@
     work_ids: [],
   };
   let openSelect = null;
+  let addressOverlay = null;
+  let visitOverlay = null;
+  let activeFloatingOverlay = null;
+  const floatingOverlayGracePeriod = 350;
+
+  function closeFloatingOverlay(overlay, { restoreFocus = false } = {}) {
+    if (!overlay || !overlay.isOpen()) return;
+    overlay.close();
+    if (activeFloatingOverlay === overlay) activeFloatingOverlay = null;
+    if (restoreFocus) overlay.invoker?.focus();
+  }
+
+  function openFloatingOverlay(overlay) {
+    if (!overlay) return;
+    if (activeFloatingOverlay && activeFloatingOverlay !== overlay) {
+      closeFloatingOverlay(activeFloatingOverlay);
+    }
+    overlay.open();
+    overlay.openedAt = Date.now();
+    activeFloatingOverlay = overlay;
+    window.requestAnimationFrame(() => overlay.position());
+  }
+
+  function isFloatingOverlayTarget(overlay, target) {
+    return Boolean(overlay && target instanceof Node && overlay.contains(target));
+  }
+
+  function positionFloatingMenu({
+    anchor,
+    menu,
+    maxHeight,
+    minWidth = 0,
+    maxWidth = Number.POSITIVE_INFINITY,
+    preferredHeight = 180,
+  }) {
+    if (!anchor || !menu) return;
+    const viewport = window.visualViewport;
+    const viewportTop = viewport?.offsetTop || 0;
+    const viewportHeight = viewport?.height || window.innerHeight;
+    const viewportBottom = viewportTop + viewportHeight;
+    const rect = anchor.getBoundingClientRect();
+    const margin = 12;
+    const gap = 8;
+    const spaceBelow = viewportBottom - rect.bottom - gap - margin;
+    const spaceAbove = rect.top - viewportTop - gap - margin;
+    const openAbove = spaceBelow < preferredHeight && spaceAbove > spaceBelow;
+    const available = Math.max(120, openAbove ? spaceAbove : spaceBelow);
+    const viewportWidth = window.innerWidth - margin * 2;
+    const width = Math.min(Math.max(rect.width, minWidth), maxWidth, viewportWidth);
+    const left = Math.min(Math.max(margin, rect.left), window.innerWidth - margin - width);
+
+    menu.style.left = `${left}px`;
+    menu.style.width = `${width}px`;
+    menu.style.maxHeight = `${Math.min(maxHeight, available)}px`;
+    if (openAbove) {
+      menu.style.top = 'auto';
+      menu.style.bottom = `${Math.max(margin, window.innerHeight - rect.top + gap)}px`;
+    } else {
+      menu.style.bottom = 'auto';
+      menu.style.top = `${Math.max(viewportTop + margin, rect.bottom + gap)}px`;
+    }
+  }
 
   function closeSelect(widget) {
     if (!widget) return;
@@ -54,6 +116,7 @@
     widget._menu?.classList.remove('is-open');
     widget.querySelector('.select__toggle')?.setAttribute('aria-expanded', 'false');
     if (openSelect === widget) openSelect = null;
+    if (activeFloatingOverlay === widget._overlay) activeFloatingOverlay = null;
   }
 
   function closeAllSelects() {
@@ -64,31 +127,16 @@
     const toggle = widget.querySelector('.select__toggle');
     const menu = widget._menu;
     if (!toggle || !menu) return;
-
     const anchor = widget.closest('.quote__field') || toggle;
-    const rect = anchor.getBoundingClientRect();
-    const viewport = window.visualViewport;
-    const viewportTop = viewport?.offsetTop || 0;
-    const viewportBottom = viewportTop + (viewport?.height || window.innerHeight);
-    const menuHeight = Math.min(menu.scrollHeight, (viewport?.height || window.innerHeight) * 0.56, 288);
-    const gap = 8;
-    const margin = 12;
-    const spaceBelow = viewportBottom - rect.bottom - gap - margin;
-    const spaceAbove = rect.top - viewportTop - gap - margin;
-    const openUp = spaceBelow < Math.min(180, menuHeight) && spaceAbove > spaceBelow;
-    const available = Math.max(120, openUp ? spaceAbove : spaceBelow);
-    const width = Math.min(Math.max(rect.width, 220), window.innerWidth - margin * 2);
-
-    menu.style.left = `${Math.min(Math.max(margin, rect.left), window.innerWidth - margin - width)}px`;
-    menu.style.width = `${width}px`;
-    menu.style.maxHeight = `${Math.min(menuHeight, available)}px`;
-    if (openUp) {
-      menu.style.top = 'auto';
-      menu.style.bottom = `${window.innerHeight - rect.top + gap}px`;
-    } else {
-      menu.style.bottom = 'auto';
-      menu.style.top = `${rect.bottom + gap}px`;
-    }
+    const viewportHeight = window.visualViewport?.height || window.innerHeight;
+    const menuHeight = Math.min(menu.scrollHeight, viewportHeight * 0.56, 288);
+    positionFloatingMenu({
+      anchor,
+      menu,
+      maxHeight: menuHeight,
+      minWidth: 220,
+      preferredHeight: Math.min(180, menuHeight),
+    });
   }
 
   function syncSelectWidget(widget) {
@@ -171,13 +219,22 @@
     document.body.appendChild(menu);
     widget._menu = menu;
 
+    widget._overlay = {
+      invoker: toggle,
+      isOpen: () => widget.classList.contains('is-open'),
+      open: () => {
+        widget.classList.add('is-open');
+        menu.classList.add('is-open');
+        toggle.setAttribute('aria-expanded', 'true');
+        openSelect = widget;
+      },
+      close: () => closeSelect(widget),
+      position: () => positionSelectMenu(widget),
+      contains: (target) => widget.contains(target) || menu.contains(target),
+    };
+
     const open = () => {
-      if (openSelect && openSelect !== widget) closeSelect(openSelect);
-      widget.classList.add('is-open');
-      menu.classList.add('is-open');
-      toggle.setAttribute('aria-expanded', 'true');
-      openSelect = widget;
-      positionSelectMenu(widget);
+      openFloatingOverlay(widget._overlay);
     };
 
     toggle.addEventListener('click', (event) => {
@@ -227,6 +284,7 @@
     input.setAttribute('aria-autocomplete', 'list');
     input.setAttribute('aria-haspopup', 'listbox');
     input.setAttribute('aria-expanded', 'false');
+    input.setAttribute('aria-label', select.getAttribute('aria-label') || 'Выберите услугу');
 
     const clear = document.createElement('button');
     clear.type = 'button';
@@ -266,6 +324,19 @@
     widget.append(input, clear);
     document.body.appendChild(menu);
     widget._menu = menu;
+    widget._overlay = {
+      invoker: input,
+      isOpen: () => widget.classList.contains('is-open'),
+      open: () => {
+        widget.classList.add('is-open');
+        menu.classList.add('is-open');
+        input.setAttribute('aria-expanded', 'true');
+        openSelect = widget;
+      },
+      close: () => closeSelect(widget),
+      position: () => positionSelectMenu(widget),
+      contains: (target) => widget.contains(target) || menu.contains(target),
+    };
 
     const filter = (queryValue = input.value) => {
       const query = normalize(queryValue);
@@ -299,21 +370,14 @@
     widget._sync = sync;
 
     const open = ({ showAll = false } = {}) => {
-      if (openSelect && openSelect !== widget) closeSelect(openSelect);
-      closeAddressSuggestions();
-      closeVisitPicker();
       filter(showAll ? '' : input.value);
-      widget.classList.add('is-open');
-      menu.classList.add('is-open');
-      input.setAttribute('aria-expanded', 'true');
-      openSelect = widget;
-      widget._openedAt = Date.now();
-      positionSelectMenu(widget);
+      openFloatingOverlay(widget._overlay);
     };
 
     input.addEventListener('focus', () => open({ showAll: true }));
     input.addEventListener('input', () => {
       select.value = '';
+      widget._openedAt = Date.now();
       clear.hidden = !input.value;
       widget.classList.toggle('has-value', Boolean(input.value));
       filter();
@@ -373,6 +437,7 @@
     addressInput.removeAttribute('aria-activedescendant');
     addressInput.closest('.quote__field')?.classList.remove('is-expanded');
     addressActiveIndex = -1;
+    if (activeFloatingOverlay === addressOverlay) activeFloatingOverlay = null;
   }
 
   function syncAddressClear() {
@@ -382,30 +447,25 @@
 
   function positionAddressSuggestions() {
     if (!addressMenu || !addressInput || addressMenu.hidden) return;
-    const viewport = window.visualViewport;
-    const viewportTop = viewport?.offsetTop || 0;
-    const viewportBottom = viewportTop + (viewport?.height || window.innerHeight);
-    const rect = addressInput.closest('.quote__field')?.getBoundingClientRect()
-      || addressInput.getBoundingClientRect();
-    const margin = 12;
-    const gap = 8;
-    const spaceBelow = viewportBottom - rect.bottom - gap - margin;
-    const spaceAbove = rect.top - viewportTop - gap - margin;
-    const openAbove = spaceBelow < 180 && spaceAbove > spaceBelow;
-    const available = Math.max(120, openAbove ? spaceAbove : spaceBelow);
-    const menuWidth = Math.min(rect.width, window.innerWidth - margin * 2);
-    const menuLeft = Math.min(Math.max(margin, rect.left), window.innerWidth - margin - menuWidth);
-    addressMenu.style.left = `${menuLeft}px`;
-    addressMenu.style.width = `${menuWidth}px`;
-    addressMenu.style.maxHeight = `${Math.min(272, available)}px`;
-    if (openAbove) {
-      addressMenu.style.top = 'auto';
-      addressMenu.style.bottom = `${Math.max(margin, window.innerHeight - rect.top + gap)}px`;
-    } else {
-      addressMenu.style.bottom = 'auto';
-      addressMenu.style.top = `${Math.max(viewportTop + margin, rect.bottom + gap)}px`;
-    }
+    positionFloatingMenu({
+      anchor: addressInput.closest('.quote__field') || addressInput,
+      menu: addressMenu,
+      maxHeight: 272,
+    });
   }
+
+  addressOverlay = {
+    invoker: addressInput,
+    isOpen: () => Boolean(addressMenu && !addressMenu.hidden),
+    open: () => {
+      if (!addressMenu || !addressInput) return;
+      addressMenu.hidden = false;
+      addressInput.setAttribute('aria-expanded', 'true');
+    },
+    close: closeAddressSuggestions,
+    position: positionAddressSuggestions,
+    contains: (target) => Boolean(addressInput?.contains(target) || addressMenu?.contains(target)),
+  };
 
   function chooseAddress(item) {
     if (!addressInput) return;
@@ -465,9 +525,8 @@
       option.addEventListener('click', () => chooseAddress(item));
       addressMenu.appendChild(option);
     });
-    addressMenu.hidden = items.length === 0;
-    addressInput.setAttribute('aria-expanded', String(items.length > 0));
-    if (items.length) window.requestAnimationFrame(positionAddressSuggestions);
+    if (items.length) openFloatingOverlay(addressOverlay);
+    else closeAddressSuggestions();
   }
 
   addressInput?.addEventListener('input', () => {
@@ -488,7 +547,7 @@
         });
         if (!response.ok) throw new Error('Address suggestions unavailable');
         const result = await response.json();
-        if (addressInput.value.trim() === query) {
+        if (document.activeElement === addressInput && addressInput.value.trim() === query) {
           renderAddressSuggestions(result.suggestions || []);
         }
       } catch (error) {
@@ -514,6 +573,8 @@
   });
 
   addressInput?.addEventListener('blur', () => {
+    window.clearTimeout(addressTimer);
+    addressController?.abort();
     window.setTimeout(closeAddressSuggestions, 120);
   });
 
@@ -639,28 +700,13 @@
 
   function positionVisitPicker() {
     if (!visitMenu || !visitToggle || visitMenu.hidden) return;
-    const viewport = window.visualViewport;
-    const viewportTop = viewport?.offsetTop || 0;
-    const viewportBottom = viewportTop + (viewport?.height || window.innerHeight);
-    const rect = (visitToggle.closest('.quote__field') || visitToggle).getBoundingClientRect();
-    const margin = 12;
-    const gap = 8;
-    const spaceBelow = viewportBottom - rect.bottom - gap - margin;
-    const spaceAbove = rect.top - viewportTop - gap - margin;
-    const openAbove = spaceBelow < 350 && spaceAbove > spaceBelow;
-    const available = Math.max(120, openAbove ? spaceAbove : spaceBelow);
-    const menuWidth = Math.min(300, window.innerWidth - margin * 2);
-    const menuLeft = Math.min(Math.max(margin, rect.left), window.innerWidth - margin - menuWidth);
-    visitMenu.style.left = `${menuLeft}px`;
-    visitMenu.style.width = `${menuWidth}px`;
-    visitMenu.style.maxHeight = `${Math.min(380, available)}px`;
-    if (openAbove) {
-      visitMenu.style.top = 'auto';
-      visitMenu.style.bottom = `${Math.max(margin, window.innerHeight - rect.top + gap)}px`;
-    } else {
-      visitMenu.style.bottom = 'auto';
-      visitMenu.style.top = `${Math.max(viewportTop + margin, rect.bottom + gap)}px`;
-    }
+    positionFloatingMenu({
+      anchor: visitToggle.closest('.quote__field') || visitToggle,
+      menu: visitMenu,
+      maxHeight: 380,
+      maxWidth: 300,
+      preferredHeight: 350,
+    });
   }
 
   function closeVisitPicker() {
@@ -668,20 +714,30 @@
     visitMenu.hidden = true;
     visitToggle.setAttribute('aria-expanded', 'false');
     visitToggle.closest('.quote__field')?.classList.remove('is-expanded');
+    if (activeFloatingOverlay === visitOverlay) activeFloatingOverlay = null;
   }
+
+  visitOverlay = {
+    invoker: visitToggle,
+    isOpen: () => Boolean(visitMenu && !visitMenu.hidden),
+    open: () => {
+      if (!visitMenu || !visitToggle) return;
+      visitMenu.hidden = false;
+      visitToggle.setAttribute('aria-expanded', 'true');
+    },
+    close: closeVisitPicker,
+    position: positionVisitPicker,
+    contains: (target) => Boolean(visitToggle?.contains(target) || visitMenu?.contains(target)),
+  };
 
   function openVisitPicker() {
     if (!visitMenu || !visitToggle) return;
-    closeAllSelects();
-    closeAddressSuggestions();
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     if (!visitSelectedDate) visitSelectedDate = new Date(visitToday);
     visitVisibleMonth = new Date(visitSelectedDate.getFullYear(), visitSelectedDate.getMonth(), 1);
     renderVisitCalendar();
     renderVisitTimes();
-    visitMenu.hidden = false;
-    visitToggle.setAttribute('aria-expanded', 'true');
-    window.requestAnimationFrame(positionVisitPicker);
+    openFloatingOverlay(visitOverlay);
   }
 
   visitToggle?.addEventListener('click', () => {
@@ -720,15 +776,19 @@
   });
 
   document.addEventListener('pointerdown', (event) => {
-    if (visitMenu?.hidden) return;
-    if (!visitMenu.contains(event.target) && !visitToggle?.contains(event.target)) closeVisitPicker();
+    if (!activeFloatingOverlay || isFloatingOverlayTarget(activeFloatingOverlay, event.target)) return;
+    closeFloatingOverlay(activeFloatingOverlay);
   });
-  const closeFloatingPickersOnScroll = (event) => {
-    if (addressMenu?.contains(event.target) || visitMenu?.contains(event.target)) return;
-    closeAddressSuggestions();
-    closeVisitPicker();
-  };
-  window.addEventListener('scroll', closeFloatingPickersOnScroll, true);
+
+  window.addEventListener('scroll', (event) => {
+    if (!activeFloatingOverlay || isFloatingOverlayTarget(activeFloatingOverlay, event.target)) return;
+    if (Date.now() - activeFloatingOverlay.openedAt < floatingOverlayGracePeriod) {
+      window.requestAnimationFrame(() => activeFloatingOverlay?.position());
+      return;
+    }
+    closeFloatingOverlay(activeFloatingOverlay);
+  }, true);
+
   let mobileInputFocusedAt = 0;
   document.addEventListener('focusin', (event) => {
     if (event.target.matches?.('#address-input, .select__search')) mobileInputFocusedAt = Date.now();
@@ -736,34 +796,16 @@
   window.addEventListener('scroll', (event) => {
     const active = document.activeElement;
     if (!active?.matches?.('#address-input, .select__search')) return;
-    if (addressMenu?.contains(event.target) || openSelect?._menu?.contains(event.target)) return;
+    if (isFloatingOverlayTarget(activeFloatingOverlay, event.target)) return;
     if (Date.now() - mobileInputFocusedAt < 500) return;
     active.blur();
   }, true);
-  window.visualViewport?.addEventListener('resize', () => {
-    positionAddressSuggestions();
-    positionVisitPicker();
-  });
+  const positionActiveFloatingOverlay = () => activeFloatingOverlay?.position();
+  window.addEventListener('resize', positionActiveFloatingOverlay);
+  window.visualViewport?.addEventListener('resize', positionActiveFloatingOverlay);
   renderVisitCalendar();
   renderVisitTimes();
   syncVisitValue();
-
-  document.addEventListener('pointerdown', (event) => {
-    if (!openSelect) return;
-    const inToggle = openSelect.contains(event.target);
-    const inMenu = openSelect._menu?.contains(event.target);
-    if (!inToggle && !inMenu) closeAllSelects();
-  });
-
-  window.addEventListener('resize', closeAllSelects);
-  window.addEventListener('scroll', (event) => {
-    if (!openSelect || openSelect._menu?.contains(event.target)) return;
-    if (Date.now() - (openSelect._openedAt || 0) < 350) {
-      window.requestAnimationFrame(() => positionSelectMenu(openSelect));
-      return;
-    }
-    closeAllSelects();
-  }, true);
 
   function collectQuoteDraft() {
     if (!quoteForm) return;
@@ -779,15 +821,15 @@
     };
   }
 
-  function openContactsFromQuote() {
+  function openContactsFromQuote(invoker = document.activeElement) {
     collectQuoteDraft();
     contactsError.hidden = true;
     contactsForm.reset();
-    openModal(modalContacts);
+    openModal(modalContacts, invoker);
   }
 
   document.querySelectorAll('[data-open-contacts]').forEach((button) => {
-    button.addEventListener('click', openContactsFromQuote);
+    button.addEventListener('click', () => openContactsFromQuote(button));
   });
 
   quoteForm?.addEventListener('submit', (event) => {
@@ -815,7 +857,6 @@
     });
   });
 
-  let activeCategory = null;
   let activeService = null;
   let modalWorkIds = new Set();
   let activeCategoryId = 'all';
@@ -858,16 +899,26 @@
     })));
   }
 
+  const servicesCatalog = allServices();
+  const searchableServices = servicesCatalog.map((service) => ({
+    service,
+    text: normalize(`${service.name} ${service.categoryName} ${service.description} ${service.works.map((work) => `${work.name} ${work.description || ''}`).join(' ')}`),
+  }));
+  const worksCatalog = servicesCatalog.flatMap((service) => service.works.map((work) => ({
+    ...work,
+    serviceId: Number(service.id),
+    serviceName: service.name,
+    categoryName: service.categoryName,
+  })));
+
   function filteredServices() {
     const q = normalize(searchInput.value);
     const searchTerms = q.split(/\s+/).filter(Boolean);
-    return allServices().filter((service) => {
+    return searchableServices.filter(({ service, text }) => {
       const inCategory = activeCategoryId === 'all' || String(service.categoryId) === activeCategoryId;
-      const worksText = service.works.map((work) => `${work.name} ${work.description || ''}`).join(' ');
-      const haystack = normalize(`${service.name} ${service.categoryName} ${service.description} ${worksText}`);
-      const matchesSearch = searchTerms.every((term) => haystack.includes(term));
+      const matchesSearch = searchTerms.every((term) => text.includes(term));
       return q ? matchesSearch : inCategory;
-    });
+    }).map(({ service }) => service);
   }
 
   function serviceMinPrice(service) {
@@ -876,12 +927,7 @@
   }
 
   function allWorks() {
-    return allServices().flatMap((service) => service.works.map((work) => ({
-      ...work,
-      serviceId: Number(service.id),
-      serviceName: service.name,
-      categoryName: service.categoryName,
-    })));
+    return worksCatalog;
   }
 
   function selectedWorks() {
@@ -901,6 +947,7 @@
     const selected = selectedWorks();
     if (workList) workList.hidden = selected.length === 0;
     document.body.classList.toggle('has-work-list', selected.length > 0);
+    if (selected.length) window.requestAnimationFrame(updateWorkListSpace);
 
     if (workListDetails && selected.length) {
       const total = selected.reduce((sum, service) => sum + Number(service.price || 0), 0);
@@ -913,6 +960,18 @@
         ? `<strong>Вы выбрали:</strong><ul>${selected.map((work) => `<li>${work.serviceName}: ${work.name} — ${formatPrice(work.price)}</li>`).join('')}</ul>`
         : '';
     }
+  }
+
+  function updateWorkListSpace() {
+    if (workList && !workList.hidden) {
+      document.body.style.setProperty('--work-list-height', `${Math.ceil(workList.getBoundingClientRect().height)}px`);
+    } else {
+      document.body.style.removeProperty('--work-list-height');
+    }
+  }
+
+  if (workList && 'ResizeObserver' in window) {
+    new ResizeObserver(updateWorkListSpace).observe(workList);
   }
 
   function renderCategoryNav() {
@@ -936,9 +995,17 @@
       button.setAttribute('aria-pressed', String(String(category.id) === activeCategoryId));
       button.addEventListener('click', () => {
         activeCategoryId = String(category.id);
-        renderCategoryNav();
+        categoryNav.querySelectorAll('.category-nav__item').forEach((item) => {
+          const isActive = item.dataset.categoryId === activeCategoryId;
+          item.classList.toggle('is-active', isActive);
+          item.setAttribute('aria-pressed', String(isActive));
+        });
         renderCatalog();
-        categoryNav.querySelector('.is-active')?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        button.scrollIntoView({
+          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+          block: 'nearest',
+          inline: 'center',
+        });
       });
       rows[index % 2].appendChild(button);
     });
@@ -969,6 +1036,10 @@
     const destination = Math.max(0, Math.min(maxScroll, target));
     const distance = destination - start;
     if (Math.abs(distance) < 1) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      categoryNav.scrollLeft = destination;
+      return;
+    }
     const startedAt = performance.now();
     const duration = 360;
     const step = (now) => {
@@ -1065,27 +1136,42 @@
           </div>
         </div>
       `;
-      card.querySelector('.service-card__action').addEventListener('click', () => {
-        openServicesModal(service);
+      card.querySelector('.service-card__action').addEventListener('click', (event) => {
+        openServicesModal(service, event.currentTarget);
       });
       card.addEventListener('click', (event) => {
         if (event.target.closest('button')) return;
-        openServicesModal(service);
+        openServicesModal(service, card.querySelector('.service-card__action'));
       });
       track.appendChild(card);
     });
   }
 
-  function openModal(modal) {
+  function openModal(modal, invoker = document.activeElement) {
+    if (!modal) return;
+    if (activeFloatingOverlay) closeFloatingOverlay(activeFloatingOverlay);
+    modal._returnFocus = invoker instanceof HTMLElement ? invoker : null;
     modal.hidden = false;
     document.body.classList.add('modal-open');
+    for (const child of document.body.children) {
+      if (child instanceof HTMLElement && child !== modal && !child.classList.contains('modal') && child !== toast) {
+        child.inert = true;
+      }
+    }
+    modal.querySelector('.modal__close')?.focus();
   }
 
   function closeModal(modal) {
+    if (!modal || modal.hidden) return;
     modal.hidden = true;
     if (modalServices.hidden && modalContacts.hidden) {
       document.body.classList.remove('modal-open');
+      for (const child of document.body.children) {
+        if (child instanceof HTMLElement) child.inert = false;
+      }
     }
+    if (modal._returnFocus?.isConnected) modal._returnFocus.focus();
+    modal._returnFocus = null;
   }
 
   function closeAllModals() {
@@ -1093,7 +1179,7 @@
     closeModal(modalContacts);
   }
 
-  function openServicesModal(service) {
+  function openServicesModal(service, invoker) {
     activeService = service;
     modalWorkIds = new Set(
       service.works
@@ -1105,7 +1191,7 @@
     servicesSubtitle.textContent = 'Отметьте одну или несколько работ. Можно выбрать работы и в других услугах.';
 
     renderWorksChecklist();
-    openModal(modalServices);
+    openModal(modalServices, invoker);
   }
 
   function renderWorksChecklist() {
@@ -1169,7 +1255,7 @@
     contactsError.hidden = true;
     contactsForm.reset();
     updateSelectionUI();
-    openModal(modalContacts);
+    openModal(modalContacts, workListSubmit);
   });
 
   servicesForm.addEventListener('submit', (event) => {
@@ -1239,17 +1325,30 @@
   });
 
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Tab') {
+      const modal = !modalContacts.hidden ? modalContacts : !modalServices.hidden ? modalServices : null;
+      if (!modal) return;
+      const focusable = [...modal.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]')]
+        .filter((element) => element.getClientRects().length);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+      return;
+    }
     if (event.key !== 'Escape') return;
-    if (visitMenu && !visitMenu.hidden) {
-      closeVisitPicker();
-      visitToggle?.focus();
+    if (activeFloatingOverlay) {
+      closeFloatingOverlay(activeFloatingOverlay, { restoreFocus: true });
       return;
     }
-    if (openSelect) {
-      closeAllSelects();
-      return;
-    }
-    closeAllModals();
+    if (!modalContacts.hidden) closeModal(modalContacts);
+    else if (!modalServices.hidden) closeModal(modalServices);
   });
 
   renderCategoryNav();

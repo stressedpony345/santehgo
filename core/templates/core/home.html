@@ -5,10 +5,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>САНТЕХГО.РФ — ВСЁ ДЛЯ ВАШЕГО КОМФОРТА</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Manrope:wght@400;600;700;800&family=Unbounded:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=66">
+  <link rel="stylesheet" href="{% static 'core/css/fonts.css' %}?v=1">
+  <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=67">
   <link rel="stylesheet" href="{% static 'core/css/cta.css' %}?v=1">
 </head>
 <body>
@@ -45,7 +43,7 @@
             href="https://max.ru/u/f9LHodD0cOLHZD05eRRmSG61Sq_oEq0JxCR3f74VfJU_7itc_zslA4CJ3VU"
             target="_blank"
             rel="noopener noreferrer"
-            aria-label="Связаться с нами в мессенджере MAX"
+            aria-label="Написать в MAX — связаться с нами в мессенджере"
           >
             <img src="{% static 'core/img/max-logo.svg' %}" alt="MAX" width="28" height="28">
             <span>Написать в MAX</span>
@@ -141,6 +139,7 @@
                 class="quote__control"
                 name="issue"
                 id="quote-issue"
+                aria-label="Выберите услугу"
                 data-placeholder="Например: течь, засор, установка"
               >
                 <option value="" selected hidden></option>
@@ -262,7 +261,7 @@
         </li>
       </ul>
 
-      <a class="hero__scroll" id="hero-scroll" href="#content" aria-label="Прокрутить вниз">
+      <a class="hero__scroll" id="hero-scroll" href="#content" aria-label="Листайте вниз — прокрутить к каталогу">
         <span class="hero__scroll-label">Листайте вниз</span>
         <span class="hero__scroll-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="28" height="28" fill="none">
@@ -306,7 +305,7 @@
         aria-label="Прокрутка категорий" aria-controls="category-nav" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <span class="category-scroll__thumb" id="category-scroll-thumb"></span>
       </div>
-      <div class="catalog-grid" id="categories-track" aria-label="Каталог услуг"></div>
+      <div class="catalog-grid" id="categories-track" role="region" aria-label="Каталог услуг"></div>
       <div class="catalog-empty" id="categories-empty" hidden>
         <strong>Ничего не найдено</strong>
         <span>Попробуйте изменить запрос или выбрать другую категорию.</span>
@@ -320,7 +319,7 @@
         <span class="work-list__icon" aria-hidden="true">✓</span>
         <span>
           <strong class="work-list__title">Ваш список работ</strong>
-          <span class="work-list__details" id="work-list-details">Ничего не выбрано</span>
+          <span class="work-list__details" id="work-list-details" role="status" aria-live="polite">Ничего не выбрано</span>
         </span>
       </div>
       <div class="work-list__actions">
@@ -371,6 +370,6 @@
 
   {{ categories|json_script:"categories-data" }}
   <script src="{% static 'core/js/hero.js' %}?v=4" defer></script>
-  <script src="{% static 'core/js/services.js' %}?v=39" defer></script>
+  <script src="{% static 'core/js/services.js' %}?v=40" defer></script>
 </body>
 </html>

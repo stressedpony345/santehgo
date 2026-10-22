@@ -1,0 +1,26 @@
+[
+  {"model":"core.category","pk":1,"fields":{"name":"Диагностика","slug":"diagnostics","description":"Поиск причин неисправностей","sort_order":10,"is_active":true}},
+  {"model":"core.category","pk":2,"fields":{"name":"Кухня","slug":"kitchen","description":"Сантехника для кухни","sort_order":20,"is_active":true}},
+  {"model":"core.category","pk":3,"fields":{"name":"Ванная","slug":"bathroom","description":"Работы в ванной комнате","sort_order":30,"is_active":true}},
+  {"model":"core.category","pk":4,"fields":{"name":"Отопление","slug":"heating","description":"Радиаторы и отопление","sort_order":40,"is_active":true}},
+  {"model":"core.category","pk":5,"fields":{"name":"Водоснабжение","slug":"water-supply","description":"Трубы и водоснабжение","sort_order":50,"is_active":true}},
+  {"model":"core.category","pk":6,"fields":{"name":"Канализация","slug":"sewerage","description":"Слив и канализация","sort_order":60,"is_active":true}},
+  {"model":"core.category","pk":7,"fields":{"name":"Загородный дом","slug":"country-house","description":"Автономные системы","sort_order":70,"is_active":true}},
+
+  {"model":"core.subcategory","pk":101,"fields":{"category":1,"name":"Диагностика протечки","description":"Находим источник явной или скрытой протечки без лишнего демонтажа.","image":null,"approximate_price":"1500","sort_order":10,"is_active":true}},
+  {"model":"core.subcategory","pk":102,"fields":{"category":2,"name":"Кухонный смеситель","description":"Установка и ремонт кухонных смесителей.","image":null,"approximate_price":"1400","sort_order":10,"is_active":true}},
+  {"model":"core.subcategory","pk":103,"fields":{"category":3,"name":"Установка унитаза","description":"Монтаж и подключение напольного унитаза.","image":null,"approximate_price":"3000","sort_order":10,"is_active":true}},
+  {"model":"core.subcategory","pk":104,"fields":{"category":4,"name":"Ремонт радиатора","description":"Диагностика течи и восстановление радиатора.","image":null,"approximate_price":"2200","sort_order":10,"is_active":true}},
+  {"model":"core.subcategory","pk":105,"fields":{"category":5,"name":"Монтаж труб","description":"Прокладка труб холодной и горячей воды.","image":null,"approximate_price":"1800","sort_order":10,"is_active":true}},
+  {"model":"core.subcategory","pk":106,"fields":{"category":6,"name":"Прочистка канализации","description":"Устранение засоров и восстановление слива.","image":null,"approximate_price":"1800","sort_order":10,"is_active":true}},
+  {"model":"core.subcategory","pk":107,"fields":{"category":7,"name":"Септик и насос","description":"Обслуживание автономной канализации и насосов.","image":null,"approximate_price":"3500","sort_order":10,"is_active":true}},
+
+  {"model":"core.work","pk":1001,"fields":{"service":101,"name":"Поиск скрытой протечки","description":"Проверка соединений и влажных зон для точной локализации.","price":"1500","sort_order":10,"is_active":true}},
+  {"model":"core.work","pk":1002,"fields":{"service":101,"name":"Проверка давления","description":"Контроль давления и поиск нестабильной подачи воды.","price":"900","sort_order":20,"is_active":true}},
+  {"model":"core.work","pk":1003,"fields":{"service":102,"name":"Замена кухонного смесителя","description":"Демонтаж старого и установка нового смесителя.","price":"1400","sort_order":10,"is_active":true}},
+  {"model":"core.work","pk":1004,"fields":{"service":103,"name":"Монтаж напольного унитаза","description":"Установка, крепление и контрольный смыв.","price":"3000","sort_order":10,"is_active":true}},
+  {"model":"core.work","pk":1005,"fields":{"service":104,"name":"Устранение течи радиатора","description":"Пересборка доступного соединения и проверка герметичности.","price":"2200","sort_order":10,"is_active":true}},
+  {"model":"core.work","pk":1006,"fields":{"service":105,"name":"Прокладка трубы","description":"Монтаж участка трубы с креплением.","price":"1800","sort_order":10,"is_active":true}},
+  {"model":"core.work","pk":1007,"fields":{"service":106,"name":"Прочистка засора","description":"Механическая прочистка и контрольный пролив.","price":"1800","sort_order":10,"is_active":true}},
+  {"model":"core.work","pk":1008,"fields":{"service":107,"name":"Диагностика насоса","description":"Проверка питания, автоматики и подачи воды.","price":"3500","sort_order":10,"is_active":true}}
+]

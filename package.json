@@ -1,0 +1,16 @@
+{
+  "name": "santehgo-ui-tests",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "test:e2e": "playwright test --grep-invert @visual",
+    "test:e2e:chromium": "playwright test --grep-invert @visual --project=desktop-chromium --project=mobile-chromium",
+    "test:e2e:list": "playwright test --list",
+    "test:visual": "playwright test --grep @visual",
+    "test:visual:update": "playwright test --grep @visual --update-snapshots"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1"
+  }
+}
