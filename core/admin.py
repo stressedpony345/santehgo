@@ -3,7 +3,8 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import Category, ClientNotification, CompletionMedia, ExtraWork, PushSubscription, ServiceRequest, SubCategory, WithdrawalRequest, Work
+from .models import Category, ClientNotification, CompletionMedia, ExtraWork, PushSubscription, ServiceRequest, ServiceRequestEvent, SubCategory, WithdrawalRequest, Work
+from .events import record_request_event
 from .notifications import enqueue_client_notification
 
 
@@ -95,6 +96,20 @@ class CompletionMediaInline(admin.TabularInline):
         return False
 
 
+class ServiceRequestEventInline(admin.TabularInline):
+    model = ServiceRequestEvent
+    extra = 0
+    fields = ('created_at', 'event', 'actor', 'from_state', 'to_state', 'metadata')
+    readonly_fields = fields
+    ordering = ('-created_at', '-pk')
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 class ClientActionFilter(admin.SimpleListFilter):
     title = 'Запрос клиента'
     parameter_name = 'client_action'
@@ -133,7 +148,7 @@ class ClientNotificationAdmin(admin.ModelAdmin):
 
 @admin.register(ServiceRequest)
 class ServiceRequestAdmin(admin.ModelAdmin):
-    inlines = (ExtraWorkInline, CompletionMediaInline)
+    inlines = (ExtraWorkInline, CompletionMediaInline, ServiceRequestEventInline)
     list_display = (
         'full_name', 'phone', 'issue', 'client_action', 'assigned_to', 'work_started_at', 'completion_status',
         'order_total', 'master_amount', 'created_at', 'completion_photo_preview', 'services_preview',
@@ -155,7 +170,7 @@ class ServiceRequestAdmin(admin.ModelAdmin):
         'callback_requested_at', 'cancel_requested_at', 'created_at',
         'consented_at', 'consent_version',
         'master_share_percent', 'approved_total', 'approved_payout',
-        'completion_status', 'completion_photo', 'completion_photo_preview', 'completion_comment',
+        'completion_status', 'completion_photo', 'completion_photo_preview', 'completion_comment', 'completion_rejection_reason',
         'payment_method', 'payment_confirmed_at', 'cash_status', 'cash_due_at', 'cash_reported_at', 'cash_confirmed_at',
         'completion_requested_at', 'completion_reviewed_at', 'completion_reviewed_by',
     )
@@ -227,6 +242,13 @@ class ServiceRequestAdmin(admin.ModelAdmin):
                 item.completion_reviewed_by = request.user
                 item.is_processed = True
                 item.save(update_fields=('approved_total', 'approved_payout', 'completion_status', 'completion_reviewed_at', 'completion_reviewed_by', 'is_processed'))
+                record_request_event(
+                    item,
+                    ServiceRequestEvent.Event.COMPLETION_APPROVED,
+                    request.user,
+                    from_state='review',
+                    to_state='completed',
+                )
                 enqueue_client_notification(
                     item.pk,
                     'completed',
@@ -244,14 +266,35 @@ class ServiceRequestAdmin(admin.ModelAdmin):
 
     @admin.action(description='Отклонить фото выбранных заявок')
     def reject_completion(self, request, queryset):
-        pending = queryset.filter(completion_status=ServiceRequest.CompletionStatus.PENDING)
-        changed = pending.update(
-            completion_status=ServiceRequest.CompletionStatus.REJECTED,
-            completion_reviewed_at=timezone.now(),
-            completion_reviewed_by=request.user,
-            is_processed=False,
+        changed = 0
+        with transaction.atomic():
+            pending = ServiceRequest.objects.select_for_update().filter(
+                pk__in=queryset.values_list('pk', flat=True),
+                completion_status=ServiceRequest.CompletionStatus.PENDING,
+            )
+            for item in pending:
+                reason = item.completion_rejection_reason.strip()
+                if not reason:
+                    continue
+                item.completion_status = ServiceRequest.CompletionStatus.REJECTED
+                item.completion_reviewed_at = timezone.now()
+                item.completion_reviewed_by = request.user
+                item.is_processed = False
+                item.save(update_fields=('completion_status', 'completion_reviewed_at', 'completion_reviewed_by', 'is_processed'))
+                record_request_event(
+                    item,
+                    ServiceRequestEvent.Event.COMPLETION_REJECTED,
+                    request.user,
+                    from_state='review',
+                    to_state='needs_correction',
+                    metadata={'reason': reason},
+                )
+                changed += 1
+        self.message_user(
+            request,
+            f'Отклонено заявок: {changed}. Для остальных сначала заполните поле «Что исправить в отчёте».',
+            messages.WARNING,
         )
-        self.message_user(request, f'Отклонено заявок: {changed}.', messages.WARNING)
 
 
 @admin.register(WithdrawalRequest)

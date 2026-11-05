@@ -149,6 +149,7 @@ class ServiceRequest(models.Model):
         null=True,
     )
     completion_comment = models.TextField('Комментарий модератору', blank=True)
+    completion_rejection_reason = models.TextField('Что исправить в отчёте', blank=True)
     master_share_percent = models.DecimalField(
         'Доля мастера, %', max_digits=5, decimal_places=2, default=40,
         validators=[MinValueValidator(0), MaxValueValidator(100)],
@@ -201,6 +202,43 @@ class ServiceRequest(models.Model):
     def freeze_amounts(self):
         self.approved_total = self.total_price
         self.approved_payout = (Decimal(self.approved_total) * self.master_share_percent / 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+
+
+class ServiceRequestEvent(models.Model):
+    class Event(models.TextChoices):
+        CLAIMED = 'claimed', 'Заявка принята мастером'
+        STARTED = 'started', 'Работа начата'
+        ASSIGNED = 'assigned', 'Мастер назначен'
+        REASSIGNED = 'reassigned', 'Мастер переназначен'
+        EXTRA_WORK = 'extra_work', 'Дополнительная работа согласована'
+        COMPLETION_SUBMITTED = 'completion_submitted', 'Отчёт отправлен'
+        COMPLETION_APPROVED = 'completion_approved', 'Отчёт принят'
+        COMPLETION_REJECTED = 'completion_rejected', 'Отчёт возвращён'
+
+    service_request = models.ForeignKey(
+        ServiceRequest,
+        on_delete=models.CASCADE,
+        related_name='events',
+        verbose_name='Заявка',
+    )
+    event = models.CharField('Событие', max_length=32, choices=Event.choices)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='service_request_events',
+        null=True,
+        blank=True,
+        verbose_name='Кто выполнил',
+    )
+    from_state = models.CharField('Состояние до', max_length=32, blank=True)
+    to_state = models.CharField('Состояние после', max_length=32, blank=True)
+    metadata = models.JSONField('Безопасные детали', default=dict, blank=True)
+    created_at = models.DateTimeField('Время', auto_now_add=True)
+
+    class Meta:
+        ordering = ('created_at', 'pk')
+        verbose_name = 'Событие заявки'
+        verbose_name_plural = 'История заявок'
 
 
 class ClientNotification(models.Model):
@@ -278,6 +316,8 @@ class ExtraWork(models.Model):
     name = models.CharField('Дополнительная работа', max_length=180)
     price = models.DecimalField('Стоимость, ₽', max_digits=10, decimal_places=0)
     added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    consent_method = models.CharField('Как согласовано с клиентом', max_length=16, choices=(('phone', 'Устно по телефону'),), blank=True)
+    consented_at = models.DateTimeField('Согласовано с клиентом', null=True, blank=True)
     created_at = models.DateTimeField('Добавлена', auto_now_add=True)
 
     class Meta:

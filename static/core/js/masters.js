@@ -128,6 +128,7 @@
           <div class="extra-work-results" data-work-results role="listbox"></div>
           <label>Название работы<input name="name" maxlength="180" required placeholder="Что нужно сделать"></label>
           <label>Стоимость, ₽<input name="price" type="number" min="1" max="9999999999" step="1" required inputmode="numeric"></label>
+          <label><input name="consent_confirmed" type="checkbox" required> Клиент согласовал эту работу и цену по телефону</label>
           <button type="submit">Добавить к заявке</button>
         </form>` : ''}
       ${item.assigned_to && item.completion_status === 'none' && !item.work_started_at ? `<button class="detail-primary" type="button" data-start="${item.id}">Начать работу</button>` : ''}
@@ -135,6 +136,7 @@
       ${item.assigned_to && item.work_started_at && ['none', 'rejected'].includes(item.completion_status) ? `<button class="detail-primary" type="button" data-complete="${item.id}">${item.completion_status === 'rejected' ? 'Отправить исправленный отчёт' : 'Сдать отчёт'}</button>` : ''}
       ${item.completion_status === 'approved' ? `<div class="payment-panel"><h3>Оплата · тестовый режим</h3>${item.payment_method === 'unset' ? `<p>Уточните у клиента способ оплаты. Выбор способа не отмечает оплату.</p><div class="payment-actions"><button type="button" data-payment="${item.id}" data-method="qr">QR</button><button type="button" data-payment="${item.id}" data-method="cash">Наличные</button><button type="button" disabled title="Пока не подключён">Безнал</button></div>` : `<p>${item.payment_method === 'cash' ? 'Наличные' : 'QR'} · ${money(item.approved_total ?? item.price)}</p>${item.payment_method === 'qr' ? `<div class="demo-qr"><img src="/masters/api/requests/${item.id}/payment/qr/" alt="Тестовый QR для заявки № ${item.id}" loading="lazy"><small>Демонстрационный QR. Реальная оплата через него недоступна.</small></div>` : ''}${!item.payment_confirmed_at ? `<button type="button" data-confirm-payment="${item.id}">${item.payment_method === 'cash' ? 'Наличные получены' : 'Клиент оплатил · тест'}</button>` : `<p>Оплата отмечена ${escapeHtml(item.payment_confirmed_at)} · тест</p>`}${item.payment_method === 'cash' && item.payment_confirmed_at ? `<p>Доля компании к сдаче: ${money(item.cash_due)} до ${escapeHtml(item.cash_due_at)}. Доля мастера ${money(item.approved_payout)} остаётся у вас.</p><p>Сдача: ${item.cash_status === 'confirmed' ? 'подтверждена модератором' : item.cash_status === 'reported' ? 'ожидает подтверждения модератора' : 'ожидается'}</p>${item.cash_status === 'due' ? `<button type="button" data-report-cash="${item.id}">Сообщить о сдаче наличных</button>` : ''}` : ''}`}</div>` : ''}
       ${item.completion_status !== 'none' && item.completion_comment ? `<div class="detail-list"><h3>Комментарий модератору</h3><p>${escapeHtml(item.completion_comment)}</p></div>` : ''}
+      ${item.completion_status === 'rejected' && item.completion_rejection_reason ? `<div class="detail-list is-warning"><h3>Что нужно исправить</h3><p>${escapeHtml(item.completion_rejection_reason)}</p></div>` : ''}
       ${item.completion_status !== 'none' && (item.completion_photo || item.completion_media.length) ? `<div class="detail-list"><h3>Материалы выполнения</h3><div class="detail-media">${item.completion_photo ? `<a href="${escapeHtml(item.completion_photo)}" target="_blank" rel="noopener">Фото 1</a>` : ''}${item.completion_media.map((media, index) => `<a href="${escapeHtml(media.url)}" target="_blank" rel="noopener">${media.kind === 'video' ? 'Видео' : 'Фото'} ${index + 2}</a>`).join('')}</div></div>` : ''}
       <a class="detail-phone" href="tel:${escapeHtml(item.phone)}">Позвонить: ${escapeHtml(item.phone)}</a>`;
     if (!dialog.open) dialog.showModal();
@@ -289,8 +291,8 @@
     button.disabled = true;
     try {
       const body = form.dataset.workId
-        ? { work_id: Number(form.dataset.workId) }
-        : { name: form.elements.name.value.trim(), price: form.elements.price.value };
+        ? { work_id: Number(form.dataset.workId), consent_method: form.elements.consent_confirmed.checked ? 'phone' : null }
+        : { name: form.elements.name.value.trim(), price: form.elements.price.value, consent_method: form.elements.consent_confirmed.checked ? 'phone' : null };
       await post(`/masters/api/requests/${form.dataset.extraForm}/extra-works/`, body);
       await loadRequests();
       openDetails(findRequest(form.dataset.extraForm));

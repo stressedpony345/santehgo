@@ -14,7 +14,7 @@ from django.test import override_settings
 from django.utils import timezone
 from PIL import Image
 
-from .models import Category, ClientNotification, ServiceRequest, SubCategory, WithdrawalRequest, Work
+from .models import Category, ClientNotification, ServiceRequest, ServiceRequestEvent, SubCategory, WithdrawalRequest, Work
 
 
 class MultiServiceRequestTests(TestCase):
@@ -644,6 +644,11 @@ class MasterAppTests(TestCase):
         self.assertEqual(self.client.post(f'/masters/api/requests/{self.request_item.id}/start/').status_code, 409)
         self.request_item.refresh_from_db()
         self.assertIsNotNone(self.request_item.work_started_at)
+        self.assertEqual(
+            list(self.request_item.events.values_list('event', flat=True)),
+            ['claimed', 'started'],
+        )
+        self.assertTrue(all(event.actor == self.master for event in self.request_item.events.all()))
 
     def test_master_cannot_claim_or_start_cancelled_request(self):
         self.request_item.cancel_requested_at = timezone.now()
@@ -693,22 +698,25 @@ class MasterAppTests(TestCase):
     def test_master_adds_catalog_and_custom_work_to_claimed_request(self):
         self.client.force_login(self.master)
         self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/')
-        self.assertEqual(self.client.post(f'/masters/api/requests/{self.request_item.id}/extra-works/', json.dumps({'work_id': self.work.id}), content_type='application/json').status_code, 409)
+        self.assertEqual(self.client.post(f'/masters/api/requests/{self.request_item.id}/extra-works/', json.dumps({'work_id': self.work.id, 'consent_method': 'phone'}), content_type='application/json').status_code, 409)
         self.client.post(f'/masters/api/requests/{self.request_item.id}/start/')
         search = self.client.get('/masters/api/works/', {'q': 'Замена'}).json()
         self.assertIn(self.work.id, [item['id'] for item in search['works']])
 
         catalog = self.client.post(
             f'/masters/api/requests/{self.request_item.id}/extra-works/',
-            data=json.dumps({'work_id': self.work.id}), content_type='application/json',
+            data=json.dumps({'work_id': self.work.id, 'consent_method': 'phone'}), content_type='application/json',
         )
         self.assertEqual(catalog.status_code, 200)
         self.assertEqual(catalog.json()['price'], 4600)
         custom = self.client.post(
             f'/masters/api/requests/{self.request_item.id}/extra-works/',
-            data=json.dumps({'name': 'Дополнительный выезд', 'price': 700}), content_type='application/json',
+            data=json.dumps({'name': 'Дополнительный выезд', 'price': 700, 'consent_method': 'phone'}), content_type='application/json',
         )
         self.assertEqual(custom.status_code, 200)
+        extra = self.request_item.extra_works.order_by('-pk').first()
+        self.assertEqual(extra.consent_method, 'phone')
+        self.assertIsNotNone(extra.consented_at)
         self.assertEqual(custom.json()['price'], 5300)
         self.work.price = 3000
         self.work.save()
@@ -719,11 +727,15 @@ class MasterAppTests(TestCase):
 
     def test_extra_work_requires_owner_and_active_request(self):
         url = f'/masters/api/requests/{self.request_item.id}/extra-works/'
-        body = json.dumps({'name': 'Диагностика', 'price': 500})
+        body = json.dumps({'name': 'Диагностика', 'price': 500, 'consent_method': 'phone'})
         self.client.force_login(self.master)
         self.assertEqual(self.client.post(url, body, content_type='application/json').status_code, 404)
         self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/')
         self.client.post(f'/masters/api/requests/{self.request_item.id}/start/')
+        self.assertEqual(
+            self.client.post(url, json.dumps({'name': 'Без согласия', 'price': 500}), content_type='application/json').status_code,
+            400,
+        )
         for invalid in ({'name': '', 'price': 500}, {'name': 'Тест', 'price': -1}, {'work_id': 999999}):
             self.assertEqual(self.client.post(url, json.dumps(invalid), content_type='application/json').status_code, 400)
         other = get_user_model().objects.create_user(username='other-master', password='pass', is_staff=True)
@@ -812,6 +824,25 @@ class MasterAppTests(TestCase):
         self.assertEqual(self.request_item.completion_status, ServiceRequest.CompletionStatus.APPROVED)
         self.assertEqual(self.request_item.approved_payout, 920)
 
+    def test_admin_must_record_correction_reason_before_rejecting_report(self):
+        moderator = get_user_model().objects.create_superuser(username='admin-reject', password='pass')
+        self.request_item.assigned_to = self.master
+        self.request_item.completion_status = ServiceRequest.CompletionStatus.PENDING
+        self.request_item.save(update_fields=('assigned_to', 'completion_status'))
+        self.client.force_login(moderator)
+        action = {'action': 'reject_completion', '_selected_action': [self.request_item.pk], 'index': '0'}
+
+        self.client.post('/admin/core/servicerequest/', action)
+        self.request_item.refresh_from_db()
+        self.assertEqual(self.request_item.completion_status, ServiceRequest.CompletionStatus.PENDING)
+
+        self.request_item.completion_rejection_reason = 'Добавьте фото соединения после проверки на течь.'
+        self.request_item.save(update_fields=('completion_rejection_reason',))
+        self.client.post('/admin/core/servicerequest/', action)
+        self.request_item.refresh_from_db()
+
+        self.assertEqual(self.request_item.completion_status, ServiceRequest.CompletionStatus.REJECTED)
+        self.assertEqual(self.request_item.events.get(event='completion_rejected').metadata['reason'], self.request_item.completion_rejection_reason)
     def test_completion_media_approval_and_frozen_40_percent(self):
         self.client.force_login(self.master)
         self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/')

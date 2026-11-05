@@ -26,6 +26,8 @@ from django.views.decorators.http import require_GET, require_POST
 from .models import Category, CompletionMedia, ExtraWork, PushSubscription, ServiceRequest, SubCategory, WithdrawalRequest, Work
 from .notifications import enqueue_client_notification
 from .roles import is_master
+from .events import record_request_event
+from .models import ServiceRequestEvent
 
 
 master_required = user_passes_test(is_master, login_url='/masters/login/')
@@ -94,6 +96,7 @@ def _request_payload(service_request):
         'completion_status': service_request.completion_status,
         'completion_photo': service_request.completion_photo.url if service_request.completion_photo else '',
         'completion_comment': service_request.completion_comment,
+        'completion_rejection_reason': service_request.completion_rejection_reason,
         'completion_media': [
             {'kind': media.kind, 'url': media.file.url}
             for media in service_request.completion_media.all()
@@ -652,6 +655,13 @@ def master_claim_request(request, request_id):
         service_request.assigned_to = request.user
         service_request.assigned_at = timezone.now()
         service_request.save(update_fields=('assigned_to', 'assigned_at'))
+        record_request_event(
+            service_request,
+            ServiceRequestEvent.Event.CLAIMED,
+            request.user,
+            from_state='available',
+            to_state='assigned',
+        )
         enqueue_client_notification(
             service_request.pk,
             'assigned',
@@ -671,6 +681,13 @@ def master_start_request(request, request_id):
             return JsonResponse({'ok': False, 'error': 'Нельзя начать работу с заявкой на этом этапе'}, status=409)
         item.work_started_at = timezone.now()
         item.save(update_fields=('work_started_at',))
+        record_request_event(
+            item,
+            ServiceRequestEvent.Event.STARTED,
+            request.user,
+            from_state='assigned',
+            to_state='in_progress',
+        )
         enqueue_client_notification(
             item.pk,
             'started',
@@ -703,6 +720,9 @@ def master_add_extra_work(request, request_id):
             raise ValueError
     except (ValueError, UnicodeDecodeError):
         return JsonResponse({'ok': False, 'error': 'Некорректные данные работы'}, status=400)
+    consent_method = data.get('consent_method')
+    if consent_method != 'phone':
+        return JsonResponse({'ok': False, 'error': 'Сначала подтвердите, что клиент согласовал работу и цену по телефону'}, status=400)
     work_id = data.get('work_id')
     if work_id is not None:
         if isinstance(work_id, bool) or not str(work_id).isdigit():
@@ -725,7 +745,26 @@ def master_add_extra_work(request, request_id):
             ServiceRequest.CompletionStatus.PENDING, ServiceRequest.CompletionStatus.APPROVED,
         ):
             return JsonResponse({'ok': False, 'error': 'Состав завершённой заявки изменить нельзя'}, status=409)
-        extra = ExtraWork.objects.create(service_request=service_request, added_by=request.user, name=name, price=price)
+        extra = ExtraWork.objects.create(
+            service_request=service_request,
+            added_by=request.user,
+            name=name,
+            price=price,
+            consent_method=consent_method,
+            consented_at=timezone.now(),
+        )
+        record_request_event(
+            service_request,
+            ServiceRequestEvent.Event.EXTRA_WORK,
+            request.user,
+            from_state='in_progress',
+            to_state='in_progress',
+            metadata={
+                'extra_work_id': extra.pk,
+                'price': int(extra.price),
+                'consent_method': extra.consent_method,
+            },
+        )
     return JsonResponse({'ok': True, 'id': extra.id, 'price': _request_price(service_request)})
 
 
@@ -783,6 +822,14 @@ def master_complete_request(request, request_id):
             CompletionMedia.objects.create(service_request=service_request, file=file, kind='photo')
         for file in videos:
             CompletionMedia.objects.create(service_request=service_request, file=file, kind='video')
+        record_request_event(
+            service_request,
+            ServiceRequestEvent.Event.COMPLETION_SUBMITTED,
+            request.user,
+            from_state='in_progress',
+            to_state='review',
+            metadata={'photos': len(photos), 'videos': len(videos)},
+        )
     return JsonResponse({'ok': True, 'status': service_request.completion_status})
 
 
