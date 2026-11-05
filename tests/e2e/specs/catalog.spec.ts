@@ -168,6 +168,18 @@ test('путь заявки и страница статуса помещают�
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test('согласие ведёт на читаемый версионированный документ', async ({ page }) => {
+  const consentLink = page.locator('.contacts__consent a');
+  await expect(consentLink).toHaveAttribute('href', '/personal-data-consent/');
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto(await consentLink.getAttribute('href') || '/personal-data-consent/');
+
+  await expect(page.getByRole('heading', { name: 'Согласие на обработку персональных данных' })).toBeVisible();
+  await expect(page.getByText('Тестовый оператор САНТЕХГО', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Версия e2e-1', { exact: false })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 test('отмена выбора не сохраняет работу и возвращает фокус', async ({ page }) => {
   const card = page.locator('.service-card').filter({ hasText: 'Диагностика протечки' });
   const trigger = card.getByRole('button', { name: 'Выбрать работы' });

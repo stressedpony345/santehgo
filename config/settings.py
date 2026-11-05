@@ -154,6 +154,22 @@ MEDIA_ROOT = Path(os.environ.get('DJANGO_MEDIA_ROOT', BASE_DIR / 'media'))
 # Server-side token for address suggestions. Never expose it in templates or JS.
 DADATA_API_TOKEN = os.environ.get('DADATA_API_TOKEN', '')
 
+# Public legal identity. Keep blank until the owner-approved production values are known.
+LEGAL_OPERATOR_NAME = os.environ.get('LEGAL_OPERATOR_NAME', '')
+LEGAL_OPERATOR_TAX_ID = os.environ.get('LEGAL_OPERATOR_TAX_ID', '')
+LEGAL_OPERATOR_REGISTRATION_ID = os.environ.get('LEGAL_OPERATOR_REGISTRATION_ID', '')
+LEGAL_OPERATOR_ADDRESS = os.environ.get('LEGAL_OPERATOR_ADDRESS', '')
+LEGAL_CONTACT_EMAIL = os.environ.get('LEGAL_CONTACT_EMAIL', '')
+LEGAL_CONTACT_PHONE = os.environ.get('LEGAL_CONTACT_PHONE', '8 (908) 705-35-85')
+PERSONAL_DATA_CONSENT_VERSION = os.environ.get('PERSONAL_DATA_CONSENT_VERSION', '2026-11-05')
+PERSONAL_DATA_CONSENT_EFFECTIVE_DATE = os.environ.get('PERSONAL_DATA_CONSENT_EFFECTIVE_DATE', '')
+LEGAL_PAGES_REQUIRED = os.environ.get('LEGAL_PAGES_REQUIRED', 'false').lower() in {'1', 'true', 'yes'}
+CLIENT_NOTIFICATIONS_ENABLED = os.environ.get('CLIENT_NOTIFICATIONS_ENABLED', 'false').lower() in {'1', 'true', 'yes'}
+CLIENT_NOTIFICATION_WEBHOOK_URL = os.environ.get('CLIENT_NOTIFICATION_WEBHOOK_URL', '')
+CLIENT_NOTIFICATION_TOKEN = os.environ.get('CLIENT_NOTIFICATION_TOKEN', '')
+CLIENT_NOTIFICATION_TIMEOUT = float(os.environ.get('CLIENT_NOTIFICATION_TIMEOUT', '5'))
+PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL', '')
+
 LOGIN_URL = '/masters/login/'
 MASTER_VAPID_KEY_PATH = Path(os.environ.get('MASTER_VAPID_KEY_PATH', BASE_DIR / 'data' / 'vapid_private.pem'))
 MASTER_VAPID_SUBJECT = os.environ.get('MASTER_VAPID_SUBJECT', 'mailto:admin@santehgo.ru')

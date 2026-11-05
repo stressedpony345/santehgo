@@ -26,6 +26,10 @@ if [ -f /app/deploy-data.json ]; then
     fi
 fi
 
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
 python manage.py collectstatic --noinput --clear
 
 exec gunicorn config.wsgi:application \

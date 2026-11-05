@@ -24,6 +24,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
 from .models import Category, CompletionMedia, ExtraWork, PushSubscription, ServiceRequest, SubCategory, WithdrawalRequest, Work
+from .notifications import enqueue_client_notification
 
 
 master_required = user_passes_test(lambda user: user.is_active and user.is_staff, login_url='/masters/login/')
@@ -261,6 +262,26 @@ def address_suggestions(request):
 
 
 @require_GET
+def personal_data_consent(request):
+    if not settings.LEGAL_OPERATOR_NAME:
+        return HttpResponse(
+            'Документ временно недоступен: данные оператора ещё не опубликованы.',
+            status=503,
+            content_type='text/plain; charset=utf-8',
+        )
+    return render(request, 'core/personal_data_consent.html', {
+        'operator_name': settings.LEGAL_OPERATOR_NAME,
+        'operator_tax_id': settings.LEGAL_OPERATOR_TAX_ID,
+        'operator_registration_id': settings.LEGAL_OPERATOR_REGISTRATION_ID,
+        'operator_address': settings.LEGAL_OPERATOR_ADDRESS,
+        'contact_email': settings.LEGAL_CONTACT_EMAIL,
+        'contact_phone': settings.LEGAL_CONTACT_PHONE,
+        'document_version': settings.PERSONAL_DATA_CONSENT_VERSION,
+        'effective_date': settings.PERSONAL_DATA_CONSENT_EFFECTIVE_DATE,
+    })
+
+
+@require_GET
 def request_success(request):
     return render(request, 'core/request_success.html')
 
@@ -361,6 +382,11 @@ def request_cancel(request, public_token):
         if service_request.cancel_requested_at is None:
             service_request.cancel_requested_at = timezone.now()
             service_request.save(update_fields=('cancel_requested_at',))
+            enqueue_client_notification(
+                service_request.pk,
+                'cancel_requested',
+                f'request:{service_request.pk}:cancel:{service_request.cancel_requested_at.isoformat()}',
+            )
     return _public_action_response(request, service_request, 'cancel')
 
 
@@ -614,6 +640,11 @@ def master_claim_request(request, request_id):
         service_request.assigned_to = request.user
         service_request.assigned_at = timezone.now()
         service_request.save(update_fields=('assigned_to', 'assigned_at'))
+        enqueue_client_notification(
+            service_request.pk,
+            'assigned',
+            f'request:{service_request.pk}:assigned:{service_request.assigned_at.isoformat()}',
+        )
     return JsonResponse({'ok': True})
 
 
@@ -628,6 +659,11 @@ def master_start_request(request, request_id):
             return JsonResponse({'ok': False, 'error': 'Нельзя начать работу с заявкой на этом этапе'}, status=409)
         item.work_started_at = timezone.now()
         item.save(update_fields=('work_started_at',))
+        enqueue_client_notification(
+            item.pk,
+            'started',
+            f'request:{item.pk}:started:{item.work_started_at.isoformat()}',
+        )
     return JsonResponse({'ok': True})
 
 
@@ -861,7 +897,7 @@ def create_request(request):
             'preferred_time': preferred_time,
             'idempotency_hash': payload_hash,
             'consented_at': timezone.now(),
-            'consent_version': '2026-11-05',
+            'consent_version': settings.PERSONAL_DATA_CONSENT_VERSION,
         }
         if idempotency_key:
             service_request, created = ServiceRequest.objects.get_or_create(
@@ -882,6 +918,12 @@ def create_request(request):
                 service_request.subcategories.set(selected)
             if selected_works:
                 service_request.works.set(selected_works)
+
+            enqueue_client_notification(
+                service_request.pk,
+                'created',
+                f'request:{service_request.pk}:created',
+            )
 
             transaction.on_commit(
                 lambda: threading.Thread(

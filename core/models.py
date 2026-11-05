@@ -3,6 +3,7 @@ from django.db import models
 from decimal import Decimal, ROUND_HALF_UP
 import uuid
 from django.core.validators import MaxValueValidator, MinValueValidator
+from django.utils import timezone
 
 
 class Category(models.Model):
@@ -200,6 +201,46 @@ class ServiceRequest(models.Model):
     def freeze_amounts(self):
         self.approved_total = self.total_price
         self.approved_payout = (Decimal(self.approved_total) * self.master_share_percent / 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+
+
+class ClientNotification(models.Model):
+    class Event(models.TextChoices):
+        CREATED = 'created', 'Заявка создана'
+        ASSIGNED = 'assigned', 'Мастер назначен'
+        STARTED = 'started', 'Работа начата'
+        COMPLETED = 'completed', 'Работа завершена'
+        CANCEL_REQUESTED = 'cancel_requested', 'Запрошена отмена'
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Ожидает отправки'
+        SENDING = 'sending', 'Отправляется'
+        SENT = 'sent', 'Отправлено'
+        FAILED = 'failed', 'Ошибка, будет повторено'
+        DEAD = 'dead', 'Не доставлено'
+
+    service_request = models.ForeignKey(
+        ServiceRequest,
+        on_delete=models.CASCADE,
+        related_name='client_notifications',
+        verbose_name='Заявка',
+    )
+    event = models.CharField('Событие', max_length=32, choices=Event.choices)
+    dedupe_key = models.CharField('Ключ события', max_length=120, unique=True)
+    channel = models.CharField('Канал', max_length=16, default='sms')
+    destination = models.CharField('Получатель', max_length=32)
+    template_version = models.CharField('Версия шаблона', max_length=20, default='1')
+    status = models.CharField('Статус', max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True)
+    attempts = models.PositiveSmallIntegerField('Попыток', default=0)
+    next_attempt_at = models.DateTimeField('Следующая попытка', default=timezone.now, db_index=True)
+    sent_at = models.DateTimeField('Отправлено', null=True, blank=True)
+    last_error = models.CharField('Последняя ошибка', max_length=240, blank=True)
+    created_at = models.DateTimeField('Создано', auto_now_add=True)
+    updated_at = models.DateTimeField('Обновлено', auto_now=True)
+
+    class Meta:
+        ordering = ('created_at',)
+        verbose_name = 'Уведомление клиенту'
+        verbose_name_plural = 'Уведомления клиентам'
 
 
 class CompletionMedia(models.Model):

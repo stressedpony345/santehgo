@@ -3,7 +3,8 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import Category, CompletionMedia, ExtraWork, PushSubscription, ServiceRequest, SubCategory, WithdrawalRequest, Work
+from .models import Category, ClientNotification, CompletionMedia, ExtraWork, PushSubscription, ServiceRequest, SubCategory, WithdrawalRequest, Work
+from .notifications import enqueue_client_notification
 
 
 class SubCategoryInline(admin.TabularInline):
@@ -109,6 +110,27 @@ class ClientActionFilter(admin.SimpleListFilter):
         return queryset
 
 
+@admin.register(ClientNotification)
+class ClientNotificationAdmin(admin.ModelAdmin):
+    list_display = ('service_request', 'event', 'masked_destination', 'status', 'attempts', 'next_attempt_at', 'sent_at')
+    list_filter = ('status', 'event', 'channel')
+    search_fields = ('service_request__phone', 'service_request__full_name', 'dedupe_key')
+    readonly_fields = (
+        'service_request', 'event', 'dedupe_key', 'channel', 'destination', 'template_version',
+        'status', 'attempts', 'next_attempt_at', 'sent_at', 'last_error', 'created_at', 'updated_at',
+    )
+
+    @admin.display(description='Получатель')
+    def masked_destination(self, obj):
+        return f'{obj.destination[:2]}***{obj.destination[-4:]}' if len(obj.destination) >= 6 else '***'
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(ServiceRequest)
 class ServiceRequestAdmin(admin.ModelAdmin):
     inlines = (ExtraWorkInline, CompletionMediaInline)
@@ -205,6 +227,11 @@ class ServiceRequestAdmin(admin.ModelAdmin):
                 item.completion_reviewed_by = request.user
                 item.is_processed = True
                 item.save(update_fields=('approved_total', 'approved_payout', 'completion_status', 'completion_reviewed_at', 'completion_reviewed_by', 'is_processed'))
+                enqueue_client_notification(
+                    item.pk,
+                    'completed',
+                    f'request:{item.pk}:completed:{item.completion_reviewed_at.isoformat()}',
+                )
                 changed += 1
         self.message_user(request, f'Подтверждено заявок: {changed}.', messages.SUCCESS)
 

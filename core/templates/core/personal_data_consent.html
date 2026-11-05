@@ -1,0 +1,43 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Согласие на обработку персональных данных — САНТЕХГО.РФ</title>
+  <link rel="stylesheet" href="{% static 'core/css/fonts.css' %}?v=1">
+  <link rel="stylesheet" href="{% static 'core/css/legal.css' %}?v=1">
+</head>
+<body>
+  <main class="legal-shell">
+    <a class="legal-back" href="/">← Вернуться на сайт</a>
+    <article class="legal-card">
+      <p class="legal-version">Версия {{ document_version }}{% if effective_date %} · действует с {{ effective_date }}{% endif %}</p>
+      <h1>Согласие на обработку персональных данных</h1>
+      <p>Отправляя заявку на сайте САНТЕХГО.РФ и устанавливая отметку согласия, я свободно и осознанно даю оператору <strong>{{ operator_name }}</strong> согласие на обработку моих персональных данных на условиях этого документа.</p>
+
+      <h2>Какие данные обрабатываются</h2>
+      <p>Имя, номер телефона, адрес выполнения работ, удобное время, содержание заявки, выбранные услуги и сведения о ходе её выполнения.</p>
+
+      <h2>Для чего нужны данные</h2>
+      <p>Чтобы принять и выполнить заявку, связаться для уточнения деталей, назначить мастера, сообщать о ходе и результате работ, а также рассматривать запросы на обратный звонок или отмену.</p>
+
+      <h2>Какие действия разрешены</h2>
+      <p>Сбор, запись, систематизация, хранение, уточнение, использование, передача исполнителю заявки в необходимом объёме, блокирование и удаление — как с применением автоматизации, так и без неё.</p>
+
+      <h2>Срок и отзыв согласия</h2>
+      <p>Согласие действует до достижения указанных целей или его отзыва, если более длительное хранение не требуется по закону. Отозвать согласие можно по контактам ниже. Отзыв не влияет на законность обработки, выполненной до его получения.</p>
+
+      <h2>Оператор и контакты</h2>
+      <dl>
+        <div><dt>Оператор</dt><dd>{{ operator_name }}</dd></div>
+        {% if operator_tax_id %}<div><dt>ИНН</dt><dd>{{ operator_tax_id }}</dd></div>{% endif %}
+        {% if operator_registration_id %}<div><dt>ОГРН / ОГРНИП</dt><dd>{{ operator_registration_id }}</dd></div>{% endif %}
+        {% if operator_address %}<div><dt>Адрес</dt><dd>{{ operator_address }}</dd></div>{% endif %}
+        {% if contact_email %}<div><dt>Email</dt><dd><a href="mailto:{{ contact_email }}">{{ contact_email }}</a></dd></div>{% endif %}
+        {% if contact_phone %}<div><dt>Телефон</dt><dd>{{ contact_phone }}</dd></div>{% endif %}
+      </dl>
+    </article>
+  </main>
+</body>
+</html>

@@ -95,7 +95,7 @@ jobs:
           tar -xzf "$RELEASE_ARCHIVE" -C "$DEPLOY_PATH"
           cd "$DEPLOY_PATH"
 
-          docker compose build web
+          docker compose build web notifications
           docker compose up -d --remove-orphans
           docker compose exec -T web python manage.py check
           docker compose exec -T web python manage.py check_master_admin --check-approval

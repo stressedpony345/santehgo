@@ -29,6 +29,20 @@ services:
       POSTGRES_USER: "${POSTGRES_USER:-santehgo}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-change-this-password}"
       DADATA_API_TOKEN: "${DADATA_API_TOKEN:-}"
+      LEGAL_OPERATOR_NAME: "${LEGAL_OPERATOR_NAME:-}"
+      LEGAL_OPERATOR_TAX_ID: "${LEGAL_OPERATOR_TAX_ID:-}"
+      LEGAL_OPERATOR_REGISTRATION_ID: "${LEGAL_OPERATOR_REGISTRATION_ID:-}"
+      LEGAL_OPERATOR_ADDRESS: "${LEGAL_OPERATOR_ADDRESS:-}"
+      LEGAL_CONTACT_EMAIL: "${LEGAL_CONTACT_EMAIL:-}"
+      LEGAL_CONTACT_PHONE: "${LEGAL_CONTACT_PHONE:-8 (908) 705-35-85}"
+      PERSONAL_DATA_CONSENT_VERSION: "${PERSONAL_DATA_CONSENT_VERSION:-2026-11-05}"
+      PERSONAL_DATA_CONSENT_EFFECTIVE_DATE: "${PERSONAL_DATA_CONSENT_EFFECTIVE_DATE:-}"
+      LEGAL_PAGES_REQUIRED: "${LEGAL_PAGES_REQUIRED:-true}"
+      CLIENT_NOTIFICATIONS_ENABLED: "${CLIENT_NOTIFICATIONS_ENABLED:-false}"
+      CLIENT_NOTIFICATION_WEBHOOK_URL: "${CLIENT_NOTIFICATION_WEBHOOK_URL:-}"
+      CLIENT_NOTIFICATION_TOKEN: "${CLIENT_NOTIFICATION_TOKEN:-}"
+      CLIENT_NOTIFICATION_TIMEOUT: "${CLIENT_NOTIFICATION_TIMEOUT:-5}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-https://xn--80agf5ahnjz.xn--p1ai}"
     depends_on:
       db:
         condition: service_healthy
@@ -42,6 +56,32 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  notifications:
+    build: .
+    restart: unless-stopped
+    command: ["sh", "-c", "while true; do python manage.py send_client_notifications --limit 50; sleep 30; done"]
+    environment:
+      DJANGO_DEBUG: "false"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "${POSTGRES_DB:-santehgo}"
+      POSTGRES_USER: "${POSTGRES_USER:-santehgo}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-change-this-password}"
+      LEGAL_OPERATOR_NAME: "${LEGAL_OPERATOR_NAME:-}"
+      PERSONAL_DATA_CONSENT_VERSION: "${PERSONAL_DATA_CONSENT_VERSION:-2026-11-05}"
+      PERSONAL_DATA_CONSENT_EFFECTIVE_DATE: "${PERSONAL_DATA_CONSENT_EFFECTIVE_DATE:-}"
+      LEGAL_PAGES_REQUIRED: "${LEGAL_PAGES_REQUIRED:-true}"
+      CLIENT_NOTIFICATIONS_ENABLED: "${CLIENT_NOTIFICATIONS_ENABLED:-false}"
+      CLIENT_NOTIFICATION_WEBHOOK_URL: "${CLIENT_NOTIFICATION_WEBHOOK_URL:-}"
+      CLIENT_NOTIFICATION_TOKEN: "${CLIENT_NOTIFICATION_TOKEN:-}"
+      CLIENT_NOTIFICATION_TIMEOUT: "${CLIENT_NOTIFICATION_TIMEOUT:-5}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-https://xn--80agf5ahnjz.xn--p1ai}"
+    depends_on:
+      web:
+        condition: service_healthy
+    volumes:
+      - django_data:/app/data
 
   nginx:
     image: nginx:1.27-alpine

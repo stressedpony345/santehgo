@@ -4,6 +4,7 @@ from . import views
 
 urlpatterns = [
     path('', views.home, name='home'),
+    path('personal-data-consent/', views.personal_data_consent, name='personal_data_consent'),
     path('request-success/', views.request_success, name='request_success'),
     path('request/<uuid:public_token>/', views.request_status, name='request_status'),
     path('request/<uuid:public_token>/callback/', views.request_callback, name='request_callback'),

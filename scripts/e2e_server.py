@@ -17,6 +17,10 @@ os.environ.update(
         "DJANGO_ALLOWED_HOSTS": "127.0.0.1,localhost",
         "DJANGO_DB_PATH": str(DATABASE_PATH),
         "DADATA_API_TOKEN": "",
+        "LEGAL_OPERATOR_NAME": "Тестовый оператор САНТЕХГО",
+        "LEGAL_CONTACT_EMAIL": "privacy@example.test",
+        "PERSONAL_DATA_CONSENT_VERSION": "e2e-1",
+        "PERSONAL_DATA_CONSENT_EFFECTIVE_DATE": "05.11.2026",
     }
 )
 

@@ -1,6 +1,7 @@
 import json
+import urllib.error
 from io import BytesIO
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -8,10 +9,11 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core import signing
 from django.core.management import call_command
 from django.test import TestCase
+from django.test import override_settings
 from django.utils import timezone
 from PIL import Image
 
-from .models import Category, ServiceRequest, SubCategory, WithdrawalRequest, Work
+from .models import Category, ClientNotification, ServiceRequest, SubCategory, WithdrawalRequest, Work
 
 
 class MultiServiceRequestTests(TestCase):
@@ -43,6 +45,42 @@ class MultiServiceRequestTests(TestCase):
         self.assertContains(response, 'Ваш список работ')
         self.assertContains(response, 'Оставить заявку')
         self.assertContains(response, 'work-list-submit')
+        self.assertContains(response, '/personal-data-consent/')
+
+    @override_settings(
+        LEGAL_OPERATOR_NAME='ИП Иванов Иван Иванович',
+        LEGAL_OPERATOR_TAX_ID='745300000000',
+        LEGAL_OPERATOR_ADDRESS='г. Челябинск, ул. Тестовая, 1',
+        LEGAL_CONTACT_EMAIL='privacy@example.test',
+        PERSONAL_DATA_CONSENT_VERSION='2026-11-05',
+    )
+    def test_personal_data_consent_page_is_versioned_and_names_the_operator(self):
+        response = self.client.get('/personal-data-consent/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'ИП Иванов Иван Иванович')
+        self.assertContains(response, '745300000000')
+        self.assertContains(response, 'privacy@example.test')
+        self.assertContains(response, 'Версия 2026-11-05')
+
+    @override_settings(LEGAL_OPERATOR_NAME='')
+    def test_personal_data_consent_page_does_not_publish_without_operator_identity(self):
+        response = self.client.get('/personal-data-consent/')
+
+        self.assertEqual(response.status_code, 503)
+
+    @override_settings(
+        LEGAL_PAGES_REQUIRED=True,
+        LEGAL_OPERATOR_NAME='',
+        PERSONAL_DATA_CONSENT_VERSION='',
+        PERSONAL_DATA_CONSENT_EFFECTIVE_DATE='',
+    )
+    def test_required_legal_configuration_reports_deploy_errors(self):
+        from .checks import check_legal_configuration
+
+        errors = check_legal_configuration(None)
+
+        self.assertEqual({error.id for error in errors}, {'core.E001', 'core.E002', 'core.E003'})
 
     def test_request_accepts_multiple_services(self):
         response = self.client.post(
@@ -288,6 +326,267 @@ class MultiServiceRequestTests(TestCase):
 
         self.assertRedirects(response, f'/request/{request.public_token}/?action=unavailable')
         self.assertContains(response, 'уже в работе или закрыта')
+
+
+class ClientNotificationTests(TestCase):
+    @override_settings(CLIENT_NOTIFICATIONS_ENABLED=True)
+    @patch('core.management.commands.send_client_notifications.deliver_notification', return_value=True)
+    def test_worker_does_not_reclaim_a_fresh_sending_notification(self, deliver):
+        service_request = ServiceRequest.objects.create(phone='+7 999 123-45-67')
+        notification = ClientNotification.objects.create(
+            service_request=service_request,
+            event=ClientNotification.Event.CREATED,
+            dedupe_key=f'request:{service_request.pk}:created',
+            destination='+79991234567',
+            status=ClientNotification.Status.SENDING,
+            next_attempt_at=timezone.now() + timedelta(minutes=5),
+        )
+
+        call_command('send_client_notifications', limit=10)
+
+        deliver.assert_not_called()
+        notification.refresh_from_db()
+        self.assertEqual(notification.status, ClientNotification.Status.SENDING)
+
+    @override_settings(CLIENT_NOTIFICATIONS_ENABLED=True)
+    @patch('core.management.commands.send_client_notifications.deliver_notification', return_value=True)
+    def test_worker_reclaims_a_stale_sending_notification_once(self, deliver):
+        service_request = ServiceRequest.objects.create(phone='+7 999 123-45-67')
+        notification = ClientNotification.objects.create(
+            service_request=service_request,
+            event=ClientNotification.Event.CREATED,
+            dedupe_key=f'request:{service_request.pk}:created',
+            destination='+79991234567',
+            status=ClientNotification.Status.SENDING,
+            next_attempt_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        call_command('send_client_notifications', limit=10)
+
+        deliver.assert_called_once()
+
+    @override_settings(CLIENT_NOTIFICATIONS_ENABLED=True)
+    def test_notification_lease_can_only_be_claimed_once(self):
+        from core.management.commands.send_client_notifications import claim_notification
+
+        service_request = ServiceRequest.objects.create(phone='+7 999 123-45-67')
+        notification = ClientNotification.objects.create(
+            service_request=service_request,
+            event=ClientNotification.Event.CREATED,
+            dedupe_key=f'request:{service_request.pk}:created',
+            destination='+79991234567',
+            next_attempt_at=timezone.now() - timedelta(seconds=1),
+        )
+        claim_time = timezone.now()
+
+        self.assertIsNotNone(claim_notification(notification.pk, claim_time))
+        self.assertIsNone(claim_notification(notification.pk, claim_time))
+
+    @override_settings(
+        CLIENT_NOTIFICATIONS_ENABLED=True,
+        CLIENT_NOTIFICATION_WEBHOOK_URL='',
+        CLIENT_NOTIFICATION_TOKEN='',
+        PUBLIC_BASE_URL='',
+    )
+    def test_enabled_notifications_require_complete_production_configuration(self):
+        from .checks import check_client_notification_configuration
+
+        errors = check_client_notification_configuration(None)
+
+        self.assertEqual({error.id for error in errors}, {'core.E010', 'core.E011', 'core.E012'})
+
+    @override_settings(
+        CLIENT_NOTIFICATIONS_ENABLED=True,
+        CLIENT_NOTIFICATION_WEBHOOK_URL='https://user:password@127.0.0.1/send',
+        CLIENT_NOTIFICATION_TOKEN='token',
+        PUBLIC_BASE_URL='https:///missing-host',
+    )
+    def test_notification_urls_must_be_public_https_hosts_without_credentials(self):
+        from .checks import check_client_notification_configuration
+
+        errors = check_client_notification_configuration(None)
+
+        self.assertEqual({error.id for error in errors}, {'core.E010', 'core.E012'})
+
+    @override_settings(CLIENT_NOTIFICATIONS_ENABLED=True)
+    def test_enqueue_is_idempotent_for_the_same_request_event(self):
+        from .notifications import enqueue_client_notification
+
+        service_request = ServiceRequest.objects.create(phone='+7 999 123-45-67')
+        first = enqueue_client_notification(service_request.pk, 'created', f'request:{service_request.pk}:created')
+        repeated = enqueue_client_notification(service_request.pk, 'created', f'request:{service_request.pk}:created')
+
+        self.assertEqual(first.pk, repeated.pk)
+        self.assertEqual(ClientNotification.objects.count(), 1)
+        self.assertEqual(first.destination, '+79991234567')
+
+    @override_settings(CLIENT_NOTIFICATIONS_ENABLED=True)
+    @patch('core.views.threading.Thread')
+    def test_new_request_enqueues_created_notification_after_commit(self, thread):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                '/api/requests/',
+                data=json.dumps({
+                    'full_name': 'Клиент', 'phone': '+7 999 123-45-67',
+                    'issue': 'Нужен сантехник', 'consent': True,
+                }),
+                content_type='application/json',
+                HTTP_IDEMPOTENCY_KEY='notification-create-key',
+            )
+
+        self.assertEqual(response.status_code, 200)
+        notification = ClientNotification.objects.get()
+        self.assertEqual(notification.event, 'created')
+        self.assertEqual(notification.dedupe_key, f'request:{notification.service_request_id}:created')
+
+    @override_settings(CLIENT_NOTIFICATIONS_ENABLED=True)
+    def test_successful_transitions_enqueue_each_event_once(self):
+        master = get_user_model().objects.create_user(username='notify-master', password='pass', is_staff=True)
+        moderator = get_user_model().objects.create_superuser(username='notify-admin', password='pass')
+        assigned_request = ServiceRequest.objects.create(phone='+7 999 123-45-67')
+        cancelled_request = ServiceRequest.objects.create(phone='+7 999 123-45-68')
+
+        self.client.force_login(master)
+        self.assertEqual(self.client.post(f'/masters/api/requests/{assigned_request.pk}/claim/').status_code, 200)
+        self.assertEqual(self.client.post(f'/masters/api/requests/{assigned_request.pk}/claim/').status_code, 409)
+        self.assertEqual(self.client.post(f'/masters/api/requests/{assigned_request.pk}/start/').status_code, 200)
+        self.assertEqual(self.client.post(f'/masters/api/requests/{assigned_request.pk}/start/').status_code, 409)
+
+        self.client.logout()
+        self.assertEqual(
+            self.client.post(
+                f'/request/{cancelled_request.public_token}/cancel/', HTTP_ACCEPT='application/json'
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.post(
+                f'/request/{cancelled_request.public_token}/cancel/', HTTP_ACCEPT='application/json'
+            ).status_code,
+            409,
+        )
+
+        assigned_request.completion_status = ServiceRequest.CompletionStatus.PENDING
+        assigned_request.save(update_fields=('completion_status',))
+        self.client.force_login(moderator)
+        self.client.post('/admin/core/servicerequest/', {
+            'action': 'approve_completion', '_selected_action': [assigned_request.pk], 'index': '0',
+        })
+
+        events = list(ClientNotification.objects.order_by('event').values_list('event', flat=True))
+        self.assertEqual(events, ['assigned', 'cancel_requested', 'completed', 'started'])
+
+    @override_settings(CLIENT_NOTIFICATIONS_ENABLED=True)
+    @patch('core.views.enqueue_client_notification', side_effect=RuntimeError('outbox unavailable'))
+    def test_request_and_outbox_roll_back_together(self, enqueue):
+        with self.assertRaises(RuntimeError):
+            self.client.post(
+                '/api/requests/',
+                data=json.dumps({
+                    'phone': '+7 999 123-45-67', 'issue': 'Нужен сантехник', 'consent': True,
+                }),
+                content_type='application/json',
+                HTTP_IDEMPOTENCY_KEY='atomic-outbox-key',
+            )
+
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+        self.assertEqual(ClientNotification.objects.count(), 0)
+
+    @override_settings(
+        CLIENT_NOTIFICATIONS_ENABLED=True,
+        CLIENT_NOTIFICATION_WEBHOOK_URL='https://sms.example.test/send',
+        CLIENT_NOTIFICATION_TOKEN='secret-token',
+        PUBLIC_BASE_URL='https://example.test',
+    )
+    @patch('core.notifications._open_provider_request')
+    def test_delivery_contains_status_link_but_not_private_request_details(self, open_provider):
+        from .notifications import deliver_notification, enqueue_client_notification
+
+        response = open_provider.return_value.__enter__.return_value
+        response.status = 200
+        response.read.return_value = b'{}'
+        service_request = ServiceRequest.objects.create(
+            full_name='Секретное имя', phone='+7 999 123-45-67',
+            address='Секретный адрес', issue='Секретная проблема',
+        )
+        notification = enqueue_client_notification(
+            service_request.pk, 'created', f'request:{service_request.pk}:created'
+        )
+
+        self.assertTrue(deliver_notification(notification))
+        sent_payload = json.loads(open_provider.call_args.args[0].data.decode('utf-8'))
+        self.assertIn(service_request.public_number, sent_payload['message'])
+        self.assertIn(f'https://example.test/request/{service_request.public_token}/', sent_payload['message'])
+        self.assertNotIn('Секретное имя', sent_payload['message'])
+        self.assertNotIn('Секретный адрес', sent_payload['message'])
+        self.assertNotIn('Секретная проблема', sent_payload['message'])
+
+    @override_settings(
+        CLIENT_NOTIFICATIONS_ENABLED=True,
+        CLIENT_NOTIFICATION_WEBHOOK_URL='https://sms.example.test/send',
+        CLIENT_NOTIFICATION_TOKEN='secret-token',
+        PUBLIC_BASE_URL='https://example.test',
+    )
+    @patch('core.notifications._open_provider_request', side_effect=urllib.error.URLError('secret provider detail'))
+    def test_provider_failure_is_retryable_without_storing_secret_details(self, open_provider):
+        from .notifications import deliver_notification, enqueue_client_notification
+
+        service_request = ServiceRequest.objects.create(phone='+7 999 123-45-67')
+        notification = enqueue_client_notification(
+            service_request.pk, 'created', f'request:{service_request.pk}:created'
+        )
+
+        self.assertFalse(deliver_notification(notification))
+        notification.refresh_from_db()
+        self.assertEqual(notification.status, ClientNotification.Status.FAILED)
+        self.assertEqual(notification.attempts, 1)
+        self.assertEqual(notification.last_error, 'URLError')
+        self.assertGreater(notification.next_attempt_at, timezone.now())
+
+    @override_settings(
+        CLIENT_NOTIFICATIONS_ENABLED=True,
+        CLIENT_NOTIFICATION_WEBHOOK_URL='https://sms.example.test/send',
+        CLIENT_NOTIFICATION_TOKEN='secret-token',
+        PUBLIC_BASE_URL='https://example.test',
+    )
+    @patch('core.notifications._open_provider_request', side_effect=TimeoutError())
+    def test_repeated_transient_failure_eventually_moves_to_dead_letter(self, open_provider):
+        from .notifications import deliver_notification, enqueue_client_notification
+
+        service_request = ServiceRequest.objects.create(phone='+7 999 123-45-67')
+        notification = enqueue_client_notification(
+            service_request.pk, 'created', f'request:{service_request.pk}:created'
+        )
+        notification.attempts = 7
+        notification.save(update_fields=('attempts',))
+
+        self.assertFalse(deliver_notification(notification))
+        notification.refresh_from_db()
+        self.assertEqual(notification.status, ClientNotification.Status.DEAD)
+        self.assertEqual(notification.attempts, 8)
+
+    @override_settings(
+        CLIENT_NOTIFICATIONS_ENABLED=True,
+        CLIENT_NOTIFICATION_WEBHOOK_URL='https://sms.example.test/send',
+        CLIENT_NOTIFICATION_TOKEN='secret-token',
+        PUBLIC_BASE_URL='https://example.test',
+    )
+    @patch('core.notifications._open_provider_request')
+    def test_permanent_provider_rejection_moves_notification_to_dead_letter(self, open_provider):
+        from .notifications import deliver_notification, enqueue_client_notification
+
+        open_provider.side_effect = urllib.error.HTTPError(
+            'https://sms.example.test/send', 400, 'bad destination', {}, None
+        )
+        service_request = ServiceRequest.objects.create(phone='+7 999 123-45-67')
+        notification = enqueue_client_notification(
+            service_request.pk, 'created', f'request:{service_request.pk}:created'
+        )
+
+        self.assertFalse(deliver_notification(notification))
+        notification.refresh_from_db()
+        self.assertEqual(notification.status, ClientNotification.Status.DEAD)
+        self.assertEqual(notification.last_error, 'HTTP 400')
 
 
 class MasterAppTests(TestCase):
