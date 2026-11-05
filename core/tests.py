@@ -268,6 +268,10 @@ class MultiServiceRequestTests(TestCase):
         request.refresh_from_db()
         self.assertIsNotNone(request.callback_requested_at)
         self.assertIsNotNone(request.cancel_requested_at)
+        self.assertEqual(
+            list(request.events.values_list('event', flat=True)),
+            ['callback_requested', 'cancel_requested'],
+        )
 
     def test_client_cannot_cancel_after_work_starts(self):
         request = ServiceRequest.objects.create(phone='+7 999 123-45-67', work_started_at=timezone.now())
@@ -617,6 +621,69 @@ class MasterAppTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertIn('/masters/login/', response.url)
+        self.assertTrue(dispatcher.has_perm('core.change_servicerequest'))
+        self.assertFalse(dispatcher.has_perm('core.approve_completion'))
+
+    def test_dispatcher_assignment_requires_master_role_reason_and_open_state(self):
+        from django.core.exceptions import ValidationError
+        from .roles import validate_master_assignment
+
+        dispatcher = get_user_model().objects.create_user(username='dispatcher-candidate', is_staff=True)
+        another_master = get_user_model().objects.create_user(username='second-master', is_staff=True)
+        another_master.groups.add(Group.objects.get_or_create(name='masters')[0])
+
+        with self.assertRaises(ValidationError):
+            validate_master_assignment(self.request_item, dispatcher, '')
+
+        self.request_item.assigned_to = self.master
+        self.request_item.save(update_fields=('assigned_to',))
+        with self.assertRaises(ValidationError):
+            validate_master_assignment(self.request_item, another_master, '')
+
+        validate_master_assignment(self.request_item, another_master, 'Мастер заболел')
+        self.request_item.work_started_at = timezone.now()
+        with self.assertRaises(ValidationError):
+            validate_master_assignment(self.request_item, another_master, 'Смена исполнителя')
+
+    def test_dispatcher_assignment_updates_timestamp_and_history(self):
+        from django.contrib import admin
+        from django.test import RequestFactory
+        from types import SimpleNamespace
+
+        dispatcher = get_user_model().objects.create_superuser(username='dispatcher-admin', password='pass')
+        another_master = get_user_model().objects.create_user(username='replacement-master', is_staff=True)
+        another_master.groups.add(Group.objects.get_or_create(name='masters')[0])
+        model_admin = admin.site._registry[ServiceRequest]
+        request = RequestFactory().post('/admin/core/servicerequest/')
+        request.user = dispatcher
+
+        self.request_item.assigned_to = self.master
+        model_admin.save_model(
+            request,
+            self.request_item,
+            SimpleNamespace(original_master_id=None, cleaned_data={'reassignment_reason': ''}),
+            True,
+        )
+        self.request_item.refresh_from_db()
+        self.assertIsNotNone(self.request_item.assigned_at)
+        self.assertEqual(self.request_item.events.get().event, 'assigned')
+
+        original_assigned_at = self.request_item.assigned_at
+        self.request_item.assigned_to = another_master
+        model_admin.save_model(
+            request,
+            self.request_item,
+            SimpleNamespace(
+                original_master_id=self.master.pk,
+                cleaned_data={'reassignment_reason': 'Мастер заболел'},
+            ),
+            True,
+        )
+        self.request_item.refresh_from_db()
+        self.assertEqual(self.request_item.assigned_to, another_master)
+        self.assertGreaterEqual(self.request_item.assigned_at, original_assigned_at)
+        event = self.request_item.events.get(event='reassigned')
+        self.assertEqual(event.metadata['reason'], 'Мастер заболел')
 
     def test_master_pages_require_login(self):
         response = self.client.get('/masters/')
@@ -843,6 +910,30 @@ class MasterAppTests(TestCase):
 
         self.assertEqual(self.request_item.completion_status, ServiceRequest.CompletionStatus.REJECTED)
         self.assertEqual(self.request_item.events.get(event='completion_rejected').metadata['reason'], self.request_item.completion_rejection_reason)
+
+    @override_settings(DEMO_FINANCE_ENABLED=False)
+    def test_production_hides_demo_finance_and_admin_records_manual_payment(self):
+        self.client.force_login(self.master)
+        self.assertNotContains(self.client.get('/masters/'), 'data-tab="income"')
+        self.assertEqual(self.client.get('/masters/api/earnings/').status_code, 404)
+        self.assertEqual(self.client.post('/masters/api/withdrawals/').status_code, 404)
+
+        self.request_item.assigned_to = self.master
+        self.request_item.completion_status = ServiceRequest.CompletionStatus.PENDING
+        self.request_item.save(update_fields=('assigned_to', 'completion_status'))
+        moderator = self._approve()
+        self.client.force_login(moderator)
+        response = self.client.post('/admin/core/servicerequest/', {
+            'action': 'record_manual_payment',
+            '_selected_action': [self.request_item.pk],
+            'index': '0',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.request_item.refresh_from_db()
+        self.assertEqual(self.request_item.payment_method, ServiceRequest.PaymentMethod.MANUAL)
+        self.assertIsNotNone(self.request_item.payment_confirmed_at)
+        self.assertEqual(self.request_item.events.get(event='payment_recorded').actor, moderator)
+    @override_settings(DEMO_FINANCE_ENABLED=True)
     def test_completion_media_approval_and_frozen_40_percent(self):
         self.client.force_login(self.master)
         self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/')
@@ -869,6 +960,7 @@ class MasterAppTests(TestCase):
         self.assertEqual(earnings['all_time']['count'], 1)
         self.assertEqual(earnings['recent'][0]['total'], 2300)
 
+    @override_settings(DEMO_FINANCE_ENABLED=True)
     def test_payment_cash_handover_and_qr_withdrawal_monday_only(self):
         self.client.force_login(self.master)
         url = f'/masters/api/requests/{self.request_item.id}/payment/'
@@ -934,6 +1026,7 @@ class MasterAppTests(TestCase):
         self.client.force_login(self.master)
         self.assertEqual(self.client.get('/masters/api/earnings/').json()['available'], 0)
 
+    @override_settings(DEMO_FINANCE_ENABLED=True)
     def test_rejected_withdrawal_releases_reserved_balance(self):
         self.request_item.assigned_to = self.master
         self.request_item.completion_status = ServiceRequest.CompletionStatus.PENDING

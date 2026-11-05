@@ -169,6 +169,7 @@ CLIENT_NOTIFICATION_WEBHOOK_URL = os.environ.get('CLIENT_NOTIFICATION_WEBHOOK_UR
 CLIENT_NOTIFICATION_TOKEN = os.environ.get('CLIENT_NOTIFICATION_TOKEN', '')
 CLIENT_NOTIFICATION_TIMEOUT = float(os.environ.get('CLIENT_NOTIFICATION_TIMEOUT', '5'))
 PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL', '')
+DEMO_FINANCE_ENABLED = os.environ.get('DEMO_FINANCE_ENABLED', 'false').lower() in {'1', 'true', 'yes'}
 
 LOGIN_URL = '/masters/login/'
 MASTER_VAPID_KEY_PATH = Path(os.environ.get('MASTER_VAPID_KEY_PATH', BASE_DIR / 'data' / 'vapid_private.pem'))

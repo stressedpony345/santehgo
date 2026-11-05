@@ -1,4 +1,5 @@
 (() => {
+  const demoFinanceEnabled = document.body.dataset.demoFinance === 'true';
   const state = { available: [], mine: [], mineFilter: 'active', latestId: 0, initialized: false };
   const availableList = document.getElementById('available-list');
   const mineList = document.getElementById('mine-list');
@@ -25,7 +26,10 @@
   }
 
   function stage(item) {
-    if (item.completion_status === 'approved') return item.payment_confirmed_at && (item.payment_method !== 'cash' || item.cash_status === 'confirmed') ? 'done' : 'payment';
+    if (item.completion_status === 'approved') {
+      if (!demoFinanceEnabled) return item.payment_confirmed_at ? 'done' : 'review';
+      return item.payment_confirmed_at && (item.payment_method !== 'cash' || item.cash_status === 'confirmed') ? 'done' : 'payment';
+    }
     if (item.completion_status === 'pending') return 'review';
     return 'active';
   }
@@ -34,6 +38,7 @@
     if (item.completion_status === 'rejected') return 'Отчёт отклонён';
     if (item.completion_status === 'pending') return 'На проверке';
     if (item.completion_status === 'approved') {
+      if (!demoFinanceEnabled) return item.payment_confirmed_at ? 'Оплата учтена диспетчером' : 'Ожидает отметки оплаты';
       if (item.payment_confirmed_at) return item.payment_method === 'cash' && item.cash_status !== 'confirmed' ? 'Сдача наличных' : 'Оплачена · тест';
       return item.payment_method === 'unset' ? 'Выбор оплаты' : 'Ожидает оплаты';
     }
@@ -42,7 +47,7 @@
 
   function card(item, mine = false) {
     const completionLabel = mine ? `<i class="request-card__status is-${stage(item)}">${stageLabel(item)}</i>` : '';
-    const nextAction = item.completion_status === 'approved' ? stage(item) === 'done' ? '' : 'Открыть оплату'
+    const nextAction = item.completion_status === 'approved' ? (!demoFinanceEnabled || stage(item) === 'done' ? '' : 'Открыть оплату')
       : item.completion_status === 'pending' ? ''
       : !item.work_started_at && item.completion_status === 'none' ? 'Начать работу'
       : item.completion_status === 'rejected' ? 'Повторить отчёт' : 'Сдать отчёт';
@@ -97,7 +102,8 @@
     state.initialized = true;
     document.getElementById('master-name').textContent = data.master.name;
     render();
-    if (!document.querySelector('[data-view="income"]').hidden) loadEarnings();
+    const incomeView = document.querySelector('[data-view="income"]');
+    if (incomeView && !incomeView.hidden) loadEarnings();
   }
 
   function findRequest(id) {
@@ -352,7 +358,7 @@
     } catch (error) { document.getElementById('income-summary').textContent = error.message; }
   }
 
-  document.getElementById('income-withdrawal').addEventListener('click', async (event) => {
+  document.getElementById('income-withdrawal')?.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-withdraw]');
     if (!button || button.disabled) return;
     button.disabled = true;

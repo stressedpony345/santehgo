@@ -16,7 +16,7 @@ from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
 from django.db import close_old_connections, transaction
 from django.db.models import Q
 from django.core import signing
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -374,6 +374,12 @@ def request_callback(request, public_token):
         if service_request.callback_requested_at is None:
             service_request.callback_requested_at = timezone.now()
             service_request.save(update_fields=('callback_requested_at',))
+            record_request_event(
+                service_request,
+                ServiceRequestEvent.Event.CALLBACK_REQUESTED,
+                from_state='available',
+                to_state='callback_requested',
+            )
     return _public_action_response(request, service_request, 'callback')
 
 
@@ -393,6 +399,12 @@ def request_cancel(request, public_token):
         if service_request.cancel_requested_at is None:
             service_request.cancel_requested_at = timezone.now()
             service_request.save(update_fields=('cancel_requested_at',))
+            record_request_event(
+                service_request,
+                ServiceRequestEvent.Event.CANCEL_REQUESTED,
+                from_state='available',
+                to_state='cancel_requested',
+            )
             enqueue_client_notification(
                 service_request.pk,
                 'cancel_requested',
@@ -424,7 +436,9 @@ def master_logout(request):
 
 @master_required
 def master_dashboard(request):
-    return render(request, 'core/masters/dashboard.html')
+    return render(request, 'core/masters/dashboard.html', {
+        'demo_finance_enabled': settings.DEMO_FINANCE_ENABLED,
+    })
 
 
 @require_GET
@@ -541,12 +555,16 @@ def _earnings_data(user):
 @require_GET
 @master_required
 def master_earnings_api(request):
+    if not settings.DEMO_FINANCE_ENABLED:
+        raise Http404
     return JsonResponse(_earnings_data(request.user))
 
 
 @require_POST
 @master_required
 def master_request_withdrawal(request):
+    if not settings.DEMO_FINANCE_ENABLED:
+        raise Http404
     if timezone.localdate().weekday() != 0:
         return JsonResponse({'ok': False, 'error': 'Заявку на вывод можно подать только в понедельник'}, status=403)
     with transaction.atomic():
@@ -562,6 +580,8 @@ def master_request_withdrawal(request):
 @require_POST
 @master_required
 def master_choose_payment(request, request_id):
+    if not settings.DEMO_FINANCE_ENABLED:
+        raise Http404
     try:
         method = json.loads(request.body).get('method')
     except (ValueError, AttributeError):
@@ -584,6 +604,8 @@ def master_choose_payment(request, request_id):
 @require_POST
 @master_required
 def master_confirm_payment(request, request_id):
+    if not settings.DEMO_FINANCE_ENABLED:
+        raise Http404
     with transaction.atomic():
         item = get_object_or_404(ServiceRequest.objects.select_for_update(), pk=request_id, assigned_to=request.user)
         if item.completion_status != ServiceRequest.CompletionStatus.APPROVED or item.payment_method not in (
@@ -603,6 +625,8 @@ def master_confirm_payment(request, request_id):
 @require_GET
 @master_required
 def master_demo_qr(request, request_id):
+    if not settings.DEMO_FINANCE_ENABLED:
+        raise Http404
     import qrcode
 
     item = get_object_or_404(ServiceRequest, pk=request_id, assigned_to=request.user,
@@ -619,6 +643,8 @@ def master_demo_qr(request, request_id):
 
 @require_GET
 def master_demo_payment(request, token):
+    if not settings.DEMO_FINANCE_ENABLED:
+        raise Http404
     try:
         payment = signing.loads(token, salt='demo-payment', max_age=7 * 24 * 3600)
     except signing.BadSignature:
@@ -629,6 +655,8 @@ def master_demo_payment(request, token):
 @require_POST
 @master_required
 def master_report_cash(request, request_id):
+    if not settings.DEMO_FINANCE_ENABLED:
+        raise Http404
     with transaction.atomic():
         item = get_object_or_404(ServiceRequest.objects.select_for_update(), pk=request_id, assigned_to=request.user)
         if item.payment_method != ServiceRequest.PaymentMethod.CASH or item.cash_status != ServiceRequest.CashStatus.DUE:
@@ -977,6 +1005,13 @@ def create_request(request):
                 service_request.subcategories.set(selected)
             if selected_works:
                 service_request.works.set(selected_works)
+
+            record_request_event(
+                service_request,
+                ServiceRequestEvent.Event.CREATED,
+                from_state='',
+                to_state='available',
+            )
 
             enqueue_client_notification(
                 service_request.pk,

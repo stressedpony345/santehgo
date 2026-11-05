@@ -83,6 +83,7 @@ class Work(models.Model):
 class ServiceRequest(models.Model):
     class PaymentMethod(models.TextChoices):
         UNSET = 'unset', 'Не выбран'
+        MANUAL = 'manual', 'Учтено диспетчером'
         QR = 'qr', 'QR (тест)'
         CASH = 'cash', 'Наличные (тест)'
         BANK = 'bank', 'Безнал (позже)'
@@ -206,6 +207,9 @@ class ServiceRequest(models.Model):
 
 class ServiceRequestEvent(models.Model):
     class Event(models.TextChoices):
+        CREATED = 'created', 'Заявка создана'
+        CALLBACK_REQUESTED = 'callback_requested', 'Клиент запросил звонок'
+        CANCEL_REQUESTED = 'cancel_requested', 'Клиент запросил отмену'
         CLAIMED = 'claimed', 'Заявка принята мастером'
         STARTED = 'started', 'Работа начата'
         ASSIGNED = 'assigned', 'Мастер назначен'
@@ -214,6 +218,7 @@ class ServiceRequestEvent(models.Model):
         COMPLETION_SUBMITTED = 'completion_submitted', 'Отчёт отправлен'
         COMPLETION_APPROVED = 'completion_approved', 'Отчёт принят'
         COMPLETION_REJECTED = 'completion_rejected', 'Отчёт возвращён'
+        PAYMENT_RECORDED = 'payment_recorded', 'Оплата учтена вручную'
 
     service_request = models.ForeignKey(
         ServiceRequest,

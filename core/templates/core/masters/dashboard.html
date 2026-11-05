@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="{% static 'core/css/masters.css' %}?v=8">
   <link rel="stylesheet" href="{% static 'core/css/masters-flow.css' %}?v=1">
 </head>
-<body class="master-app">
+<body class="master-app" data-demo-finance="{{ demo_finance_enabled|yesno:'true,false' }}">
   <header class="app-header">
     <a href="/masters/" class="app-logo"><img src="{% static 'core/img/logo.svg' %}?v=2" alt="САНТЕХГО"></a>
     <div class="app-header__status"><span></span><small>На смене</small><strong id="master-name">Мастер</strong></div>
@@ -43,7 +43,7 @@
       <div class="empty-state" id="mine-empty" hidden><span>↗</span><strong>На этом этапе заявок нет</strong></div>
     </section>
 
-    <section class="app-view" data-view="income" hidden>
+    {% if demo_finance_enabled %}<section class="app-view" data-view="income" hidden>
       <div class="view-head"><div><p class="view-kicker">Финансы и эффективность</p><h1>Доход</h1></div><span class="soon-badge">Выплаты: тестовый режим</span></div>
       <p class="income-explainer">Доход считается только по принятым модератором работам. От стоимости заявки 40% получает мастер, 60% — компания. Днём заработка считается день подтверждения.</p>
       <div class="income-summary" id="income-summary" aria-live="polite"></div>
@@ -54,7 +54,7 @@
       <section class="income-panel income-withdraw"><h2>Вывод средств</h2><div id="income-withdrawal"></div></section>
       <section class="income-panel"><h2>Последние подтверждённые заявки</h2><div id="income-recent"></div></section>
       <section class="income-panel"><h2>История заявок на вывод</h2><div id="income-history"></div></section>
-    </section>
+    </section>{% endif %}
 
     <section class="app-view" data-view="profile" hidden>
       <div class="view-head"><div><p class="view-kicker">Настройки</p><h1>Профиль</h1></div></div>
@@ -78,7 +78,7 @@
   <nav class="app-nav" aria-label="Разделы приложения">
     <button class="is-active" type="button" data-tab="available"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 9h8M8 13h5"/></svg><small>Заявки</small><b id="nav-badge">0</b></button>
     <button type="button" data-tab="mine"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h10v14H5V9zM9 5v4H5M9 13h6M9 16h4"/></svg><small>Мои</small></button>
-    <button type="button" data-tab="income"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/></svg><small>Доход</small></button>
+    {% if demo_finance_enabled %}<button type="button" data-tab="income"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/></svg><small>Доход</small></button>{% endif %}
     <button type="button" data-tab="profile"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c.8-4 3.5-6 8-6s7.2 2 8 6"/></svg><small>Профиль</small></button>
   </nav>
 

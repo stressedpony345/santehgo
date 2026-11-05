@@ -1,4 +1,7 @@
 from django.contrib import admin, messages
+from django import forms
+from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from django.utils.html import format_html
@@ -6,6 +9,47 @@ from django.utils.html import format_html
 from .models import Category, ClientNotification, CompletionMedia, ExtraWork, PushSubscription, ServiceRequest, ServiceRequestEvent, SubCategory, WithdrawalRequest, Work
 from .events import record_request_event
 from .notifications import enqueue_client_notification
+from .roles import MASTER_GROUP, validate_master_assignment
+
+
+class ServiceRequestAdminForm(forms.ModelForm):
+    reassignment_reason = forms.CharField(
+        label='Причина переназначения',
+        required=False,
+        max_length=500,
+        widget=forms.Textarea(attrs={'rows': 2}),
+        help_text='Обязательно при замене уже назначенного мастера.',
+    )
+
+    class Meta:
+        model = ServiceRequest
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['assigned_to'].queryset = get_user_model().objects.filter(
+            is_active=True,
+            groups__name=MASTER_GROUP,
+        ).distinct()
+        self.original_master_id = None
+        if self.instance.pk:
+            self.original_master_id = ServiceRequest.objects.filter(pk=self.instance.pk).values_list(
+                'assigned_to_id', flat=True,
+            ).first()
+
+    def clean(self):
+        cleaned = super().clean()
+        original = (
+            ServiceRequest.objects.get(pk=self.instance.pk)
+            if self.instance.pk
+            else ServiceRequest()
+        )
+        validate_master_assignment(
+            original,
+            cleaned.get('assigned_to'),
+            cleaned.get('reassignment_reason', ''),
+        )
+        return cleaned
 
 
 class SubCategoryInline(admin.TabularInline):
@@ -148,6 +192,7 @@ class ClientNotificationAdmin(admin.ModelAdmin):
 
 @admin.register(ServiceRequest)
 class ServiceRequestAdmin(admin.ModelAdmin):
+    form = ServiceRequestAdminForm
     inlines = (ExtraWorkInline, CompletionMediaInline, ServiceRequestEventInline)
     list_display = (
         'full_name', 'phone', 'issue', 'client_action', 'assigned_to', 'work_started_at', 'completion_status',
@@ -166,7 +211,7 @@ class ServiceRequestAdmin(admin.ModelAdmin):
     )
     fields = (
         'full_name', 'phone', 'issue', 'address', 'preferred_time',
-        'subcategories', 'works', 'assigned_to', 'assigned_at', 'work_started_at',
+        'subcategories', 'works', 'assigned_to', 'reassignment_reason', 'assigned_at', 'work_started_at',
         'callback_requested_at', 'cancel_requested_at', 'created_at',
         'consented_at', 'consent_version',
         'master_share_percent', 'approved_total', 'approved_payout',
@@ -174,7 +219,7 @@ class ServiceRequestAdmin(admin.ModelAdmin):
         'payment_method', 'payment_confirmed_at', 'cash_status', 'cash_due_at', 'cash_reported_at', 'cash_confirmed_at',
         'completion_requested_at', 'completion_reviewed_at', 'completion_reviewed_by',
     )
-    actions = ('approve_completion', 'reject_completion', 'confirm_cash')
+    actions = ('approve_completion', 'reject_completion', 'record_manual_payment', 'confirm_cash')
     date_hierarchy = 'created_at'
 
     @admin.display(description='Стоимость заявки')
@@ -218,13 +263,55 @@ class ServiceRequestAdmin(admin.ModelAdmin):
             actions.pop('approve_completion', None)
             actions.pop('reject_completion', None)
             actions.pop('confirm_cash', None)
+            actions.pop('record_manual_payment', None)
+        if not settings.DEMO_FINANCE_ENABLED:
+            actions.pop('confirm_cash', None)
         return actions
 
     def get_readonly_fields(self, request, obj=None):
         fields = list(super().get_readonly_fields(request, obj))
+        if not request.user.is_superuser:
+            fields.extend(
+                field.name
+                for field in (*ServiceRequest._meta.fields, *ServiceRequest._meta.many_to_many)
+                if field.name != 'assigned_to'
+            )
         if obj and obj.completion_status == ServiceRequest.CompletionStatus.APPROVED:
             fields.append('master_share_percent')
-        return fields
+        return tuple(dict.fromkeys(fields))
+
+    def save_model(self, request, obj, form, change):
+        old_master_id = getattr(form, 'original_master_id', None)
+        new_master_id = obj.assigned_to_id
+        with transaction.atomic():
+            super().save_model(request, obj, form, change)
+            if old_master_id == new_master_id:
+                return
+            obj.assigned_at = timezone.now() if new_master_id else None
+            obj.save(update_fields=('assigned_at',))
+            event = (
+                ServiceRequestEvent.Event.REASSIGNED
+                if old_master_id
+                else ServiceRequestEvent.Event.ASSIGNED
+            )
+            record_request_event(
+                obj,
+                event,
+                request.user,
+                from_state='assigned' if old_master_id else 'available',
+                to_state='assigned' if new_master_id else 'available',
+                metadata={
+                    'from_master_id': old_master_id,
+                    'to_master_id': new_master_id,
+                    'reason': form.cleaned_data.get('reassignment_reason', '').strip(),
+                },
+            )
+            if new_master_id:
+                enqueue_client_notification(
+                    obj.pk,
+                    'assigned',
+                    f'request:{obj.pk}:assigned:{obj.assigned_at.isoformat()}',
+                )
 
     @admin.action(description='Подтвердить завершение выбранных заявок')
     def approve_completion(self, request, queryset):
@@ -263,6 +350,30 @@ class ServiceRequestAdmin(admin.ModelAdmin):
             cash_status=ServiceRequest.CashStatus.CONFIRMED, cash_confirmed_at=timezone.now(),
         )
         self.message_user(request, f'Подтверждено сдач: {changed}.', messages.SUCCESS)
+
+    @admin.action(description='Отметить фактическую оплату вручную')
+    def record_manual_payment(self, request, queryset):
+        changed = 0
+        with transaction.atomic():
+            items = ServiceRequest.objects.select_for_update().filter(
+                pk__in=queryset.values_list('pk', flat=True),
+                completion_status=ServiceRequest.CompletionStatus.APPROVED,
+                payment_confirmed_at__isnull=True,
+            )
+            for item in items:
+                item.payment_method = ServiceRequest.PaymentMethod.MANUAL
+                item.payment_confirmed_at = timezone.now()
+                item.save(update_fields=('payment_method', 'payment_confirmed_at'))
+                record_request_event(
+                    item,
+                    ServiceRequestEvent.Event.PAYMENT_RECORDED,
+                    request.user,
+                    from_state='awaiting_payment',
+                    to_state='paid',
+                    metadata={'method': 'manual', 'amount': int(item.approved_total or item.total_price)},
+                )
+                changed += 1
+        self.message_user(request, f'Оплата отмечена у заявок: {changed}.', messages.SUCCESS)
 
     @admin.action(description='Отклонить фото выбранных заявок')
     def reject_completion(self, request, queryset):
@@ -303,6 +414,9 @@ class WithdrawalRequestAdmin(admin.ModelAdmin):
     list_filter = ('status', 'created_at')
     readonly_fields = ('master', 'amount', 'status', 'created_at', 'reviewed_at', 'reviewed_by')
     actions = ('approve_withdrawal', 'reject_withdrawal')
+
+    def has_module_permission(self, request):
+        return settings.DEMO_FINANCE_ENABLED and super().has_module_permission(request)
 
     def has_add_permission(self, request):
         return False
