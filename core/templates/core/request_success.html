@@ -23,18 +23,43 @@
       <div class="success-check" aria-hidden="true">
         <svg viewBox="0 0 64 64"><path d="m18 33 9 9 20-22"/></svg>
       </div>
-      <p class="success-eyebrow">Заявка успешно отправлена</p>
-      <h1 id="success-title">Заявка принята<br><em>в работу</em></h1>
-      <p class="success-text">Мы рассмотрим её в ближайшее время и свяжемся с вами по указанному номеру телефона.</p>
+      <p class="success-eyebrow">{% if service_request %}Заявка {{ service_request.public_number }}{% else %}Заявка успешно отправлена{% endif %}</p>
+      <h1 id="success-title">{% if service_request %}{{ public_status }}{% else %}Заявка принята<br><em>в работу</em>{% endif %}</h1>
+      <p class="success-text">{% if service_request %}Сохраните эту страницу: здесь отображается актуальное состояние заявки.{% else %}Мы рассмотрим её в ближайшее время и свяжемся с вами по указанному номеру телефона.{% endif %}</p>
 
       <div class="success-status">
-        <span class="success-status__number">01</span>
-        <span><strong>Что дальше?</strong><small>Мастер уточнит детали, рассчитает стоимость и согласует удобное время выезда.</small></span>
+        <span class="success-status__number" aria-hidden="true">01</span>
+        <span><strong>{% if service_request %}{{ public_status }}{% else %}Что дальше?{% endif %}</strong><small>{% if service_request %}{{ public_next_step }}{% else %}Мастер уточнит детали, рассчитает стоимость и согласует удобное время выезда.{% endif %}</small></span>
       </div>
+
+      {% if service_request %}
+        {% if action_feedback == 'callback' %}<p class="success-feedback" role="status">Запрос принят. Мы перезвоним по номеру из заявки.</p>{% endif %}
+        {% if action_feedback == 'cancel' %}<p class="success-feedback" role="status">Запрос на отмену принят. Мы свяжемся с вами для подтверждения.</p>{% endif %}
+        {% if action_feedback == 'unavailable' %}<p class="success-feedback" role="status">Заявка уже в работе или закрыта. Позвоните нам, если нужна помощь.</p>{% endif %}
+        <dl class="success-summary" aria-label="Детали заявки">
+          {% if service_request.address %}<div><dt>Адрес</dt><dd>{{ service_request.address }}</dd></div>{% endif %}
+          {% if service_request.preferred_time %}<div><dt>Когда удобно</dt><dd>{{ service_request.preferred_time }}</dd></div>{% endif %}
+          <div><dt>Что выбрано</dt><dd>
+            {% for work in service_request.works.all %}{{ work.name }}{% if not forloop.last %}, {% endif %}
+            {% empty %}{% for service in service_request.subcategories.all %}{{ service.name }}{% if not forloop.last %}, {% endif %}{% empty %}Описание передано мастеру{% endfor %}{% endfor %}
+          </dd></div>
+          <div><dt>Ориентир стоимости</dt><dd>от {{ service_request.total_price }} ₽ <small>Точную сумму мастер согласует до начала работ</small></dd></div>
+        </dl>
+        {% if public_actions_allowed %}<div class="success-actions" aria-label="Действия с заявкой">
+          <form method="post" action="{% url 'request_callback' service_request.public_token %}">
+            {% csrf_token %}
+            <button type="submit">Перезвоните мне</button>
+          </form>
+          <form method="post" action="{% url 'request_cancel' service_request.public_token %}">
+            {% csrf_token %}
+            <button class="success-actions__quiet" type="submit">Запросить отмену</button>
+          </form>
+        </div>{% endif %}
+      {% endif %}
 
       <a class="success-back" href="/">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
-        Вернуться на главную
+        {% if service_request %}Выбрать ещё услугу{% else %}Вернуться на главную{% endif %}
       </a>
       <p class="success-phone">Нужно срочно? <a href="tel:+79087053585">8 (908) 705-35-85</a></p>
     </section>

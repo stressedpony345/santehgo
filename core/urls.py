@@ -5,6 +5,9 @@ from . import views
 urlpatterns = [
     path('', views.home, name='home'),
     path('request-success/', views.request_success, name='request_success'),
+    path('request/<uuid:public_token>/', views.request_status, name='request_status'),
+    path('request/<uuid:public_token>/callback/', views.request_callback, name='request_callback'),
+    path('request/<uuid:public_token>/cancel/', views.request_cancel, name='request_cancel'),
     path('masters/login/', views.master_login, name='master_login'),
     path('masters/logout/', views.master_logout, name='master_logout'),
     path('masters/', views.master_dashboard, name='master_dashboard'),

@@ -1905,6 +1905,29 @@ body.modal-open {
   gap: 0.9rem;
 }
 
+.contacts__consent {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 0.65rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.contacts__consent input {
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  accent-color: var(--primary, #1683d8);
+}
+
+.contacts__consent input:focus-visible {
+  outline: 2px solid #1683d8;
+  outline-offset: 3px;
+}
+
 .field {
   display: grid;
   gap: 0.35rem;

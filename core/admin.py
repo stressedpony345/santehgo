@@ -94,25 +94,44 @@ class CompletionMediaInline(admin.TabularInline):
         return False
 
 
+class ClientActionFilter(admin.SimpleListFilter):
+    title = 'Запрос клиента'
+    parameter_name = 'client_action'
+
+    def lookups(self, request, model_admin):
+        return (('callback', 'Перезвонить'), ('cancel', 'Отмена'))
+
+    def queryset(self, request, queryset):
+        if self.value() == 'callback':
+            return queryset.filter(callback_requested_at__isnull=False)
+        if self.value() == 'cancel':
+            return queryset.filter(cancel_requested_at__isnull=False)
+        return queryset
+
+
 @admin.register(ServiceRequest)
 class ServiceRequestAdmin(admin.ModelAdmin):
     inlines = (ExtraWorkInline, CompletionMediaInline)
     list_display = (
-        'full_name', 'phone', 'issue', 'assigned_to', 'work_started_at', 'completion_status',
+        'full_name', 'phone', 'issue', 'client_action', 'assigned_to', 'work_started_at', 'completion_status',
         'order_total', 'master_amount', 'created_at', 'completion_photo_preview', 'services_preview',
     )
-    list_filter = ('completion_status', 'assigned_to', 'created_at', 'preferred_time')
+    list_filter = (ClientActionFilter, 'completion_status', 'assigned_to', 'created_at', 'preferred_time')
     search_fields = ('full_name', 'phone', 'issue', 'address', 'subcategories__name')
     filter_horizontal = ('subcategories', 'works')
     readonly_fields = (
-        'created_at', 'assigned_at', 'work_started_at', 'payment_confirmed_at', 'completion_requested_at',
+        'created_at', 'assigned_at', 'work_started_at', 'callback_requested_at', 'cancel_requested_at',
+        'consented_at', 'consent_version',
+        'payment_confirmed_at', 'completion_requested_at',
         'completion_reviewed_at', 'completion_reviewed_by', 'completion_photo_preview',
         'approved_total', 'approved_payout', 'cash_status', 'cash_due_at', 'cash_reported_at', 'cash_confirmed_at',
         'completion_status', 'payment_method',
     )
     fields = (
         'full_name', 'phone', 'issue', 'address', 'preferred_time',
-        'subcategories', 'works', 'assigned_to', 'assigned_at', 'work_started_at', 'created_at',
+        'subcategories', 'works', 'assigned_to', 'assigned_at', 'work_started_at',
+        'callback_requested_at', 'cancel_requested_at', 'created_at',
+        'consented_at', 'consent_version',
         'master_share_percent', 'approved_total', 'approved_payout',
         'completion_status', 'completion_photo', 'completion_photo_preview', 'completion_comment',
         'payment_method', 'payment_confirmed_at', 'cash_status', 'cash_due_at', 'cash_reported_at', 'cash_confirmed_at',
@@ -128,6 +147,15 @@ class ServiceRequestAdmin(admin.ModelAdmin):
     @admin.display(description='Мастеру')
     def master_amount(self, obj):
         return obj.master_payout
+
+    @admin.display(description='Запрос клиента')
+    def client_action(self, obj):
+        actions = []
+        if obj.callback_requested_at:
+            actions.append('Перезвонить')
+        if obj.cancel_requested_at:
+            actions.append('Отмена')
+        return ' · '.join(actions) or '—'
 
     @admin.display(description='Услуги')
     def services_preview(self, obj):

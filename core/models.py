@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 from decimal import Decimal, ROUND_HALF_UP
+import uuid
 from django.core.validators import MaxValueValidator, MinValueValidator
 
 
@@ -97,6 +98,11 @@ class ServiceRequest(models.Model):
         APPROVED = 'approved', 'Завершена'
         REJECTED = 'rejected', 'Отклонена'
 
+    public_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    idempotency_key = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
+    idempotency_hash = models.CharField(max_length=64, blank=True, editable=False)
+    consented_at = models.DateTimeField('Согласие получено', blank=True, null=True, editable=False)
+    consent_version = models.CharField(max_length=20, blank=True, editable=False)
     full_name = models.CharField('ФИО', max_length=200, blank=True)
     phone = models.CharField('Телефон', max_length=32)
     issue = models.CharField('Что случилось', max_length=500, blank=True)
@@ -126,6 +132,8 @@ class ServiceRequest(models.Model):
     )
     assigned_at = models.DateTimeField('Передана мастеру', blank=True, null=True)
     work_started_at = models.DateTimeField('Мастер начал работу', blank=True, null=True)
+    callback_requested_at = models.DateTimeField('Клиент запросил звонок', blank=True, null=True)
+    cancel_requested_at = models.DateTimeField('Клиент запросил отмену', blank=True, null=True)
     completion_status = models.CharField(
         'Статус завершения',
         max_length=16,
@@ -170,6 +178,10 @@ class ServiceRequest(models.Model):
 
     def __str__(self):
         return f'{self.full_name} ({self.phone})'
+
+    @property
+    def public_number(self):
+        return f'SG-{self.pk:06d}'
 
     @property
     def total_price(self):

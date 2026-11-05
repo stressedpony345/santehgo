@@ -1,6 +1,7 @@
 import json
 import re
 import base64
+import hashlib
 from io import BytesIO
 import threading
 import urllib.error
@@ -264,6 +265,105 @@ def request_success(request):
     return render(request, 'core/request_success.html')
 
 
+@require_GET
+def request_status(request, public_token):
+    service_request = get_object_or_404(
+        ServiceRequest.objects.prefetch_related('works', 'subcategories'),
+        public_token=public_token,
+    )
+    if service_request.cancel_requested_at:
+        status = ('Запрос на отмену принят', 'Мы проверим состояние заявки и свяжемся с вами.')
+    elif service_request.completion_status == ServiceRequest.CompletionStatus.APPROVED:
+        status = ('Работа завершена', 'Работа принята. Если остались вопросы, позвоните нам.')
+    elif service_request.completion_status == ServiceRequest.CompletionStatus.PENDING:
+        status = ('Проверяем результат', 'Мастер отправил отчёт, администратор проверяет выполненную работу.')
+    elif service_request.completion_status == ServiceRequest.CompletionStatus.REJECTED:
+        status = ('Мастер уточняет результат', 'Отчёт возвращён мастеру на уточнение. От вас пока ничего не требуется.')
+    elif service_request.work_started_at:
+        status = ('Мастер выполняет работу', 'После завершения мы проверим результат и обновим статус.')
+    elif service_request.assigned_to_id:
+        status = ('Мастер назначен', 'Мастер свяжется с вами и подтвердит детали выезда.')
+    else:
+        status = ('Ожидает мастера', 'Мы передали заявку мастерам. С вами свяжутся для уточнения деталей.')
+    response = render(request, 'core/request_success.html', {
+        'service_request': service_request,
+        'public_status': status[0],
+        'public_next_step': status[1],
+        'action_feedback': request.GET.get('action', ''),
+        'public_actions_allowed': _public_actions_allowed(service_request),
+    })
+    return _private_request_response(response)
+
+
+def _public_actions_allowed(service_request):
+    return (
+        service_request.work_started_at is None
+        and service_request.cancel_requested_at is None
+        and service_request.completion_status == ServiceRequest.CompletionStatus.NONE
+    )
+
+
+def _private_request_response(response):
+    response['Cache-Control'] = 'private, no-store'
+    response['Referrer-Policy'] = 'no-referrer'
+    response['X-Robots-Tag'] = 'noindex, nofollow'
+    return response
+
+
+def _public_action_response(request, service_request, action):
+    if 'application/json' in request.headers.get('Accept', ''):
+        return _private_request_response(JsonResponse({'ok': True}))
+    return _private_request_response(redirect(
+        f"{reverse('request_status', args=[service_request.public_token])}?action={action}"
+    ))
+
+
+def _public_action_unavailable(request, service_request, error):
+    if 'application/json' in request.headers.get('Accept', ''):
+        return _private_request_response(JsonResponse({'ok': False, 'error': error}, status=409))
+    return _private_request_response(redirect(
+        f"{reverse('request_status', args=[service_request.public_token])}?action=unavailable"
+    ))
+
+
+@require_POST
+def request_callback(request, public_token):
+    with transaction.atomic():
+        service_request = get_object_or_404(
+            ServiceRequest.objects.select_for_update(),
+            public_token=public_token,
+        )
+        if not _public_actions_allowed(service_request):
+            return _public_action_unavailable(
+                request,
+                service_request,
+                'Заявка уже в работе или закрыта. Позвоните нам, если нужна помощь.',
+            )
+        if service_request.callback_requested_at is None:
+            service_request.callback_requested_at = timezone.now()
+            service_request.save(update_fields=('callback_requested_at',))
+    return _public_action_response(request, service_request, 'callback')
+
+
+@require_POST
+def request_cancel(request, public_token):
+    with transaction.atomic():
+        service_request = get_object_or_404(
+            ServiceRequest.objects.select_for_update(),
+            public_token=public_token,
+        )
+        if not _public_actions_allowed(service_request):
+            return _public_action_unavailable(
+                request,
+                service_request,
+                'Заявка уже в работе или закрыта. Позвоните нам, если нужна помощь.',
+            )
+        if service_request.cancel_requested_at is None:
+            service_request.cancel_requested_at = timezone.now()
+            service_request.save(update_fields=('cancel_requested_at',))
+    return _public_action_response(request, service_request, 'cancel')
+
+
 def master_login(request):
     if request.user.is_authenticated and request.user.is_staff:
         return redirect('master_dashboard')
@@ -337,7 +437,11 @@ def master_requests_api(request):
     queryset = ServiceRequest.objects.select_related('assigned_to').prefetch_related(
         'works', 'subcategories__category', 'extra_works', 'completion_media'
     )
-    available = queryset.filter(is_processed=False, assigned_to__isnull=True)
+    available = queryset.filter(
+        is_processed=False,
+        assigned_to__isnull=True,
+        cancel_requested_at__isnull=True,
+    )
     mine = queryset.filter(assigned_to=request.user)
     approved_income = sum(
         int(item.master_payout)
@@ -503,6 +607,8 @@ def master_claim_request(request, request_id):
         service_request = get_object_or_404(ServiceRequest.objects.select_for_update(), pk=request_id)
         if service_request.is_processed:
             return JsonResponse({'ok': False, 'error': 'Заявка уже завершена'}, status=409)
+        if service_request.cancel_requested_at:
+            return JsonResponse({'ok': False, 'error': 'Клиент запросил отмену заявки'}, status=409)
         if service_request.assigned_to_id:
             return JsonResponse({'ok': False, 'error': 'Заявку уже взял другой мастер'}, status=409)
         service_request.assigned_to = request.user
@@ -516,6 +622,8 @@ def master_claim_request(request, request_id):
 def master_start_request(request, request_id):
     with transaction.atomic():
         item = get_object_or_404(ServiceRequest.objects.select_for_update(), pk=request_id, assigned_to=request.user)
+        if item.cancel_requested_at:
+            return JsonResponse({'ok': False, 'error': 'Клиент запросил отмену заявки'}, status=409)
         if item.is_processed or item.completion_status != ServiceRequest.CompletionStatus.NONE or item.work_started_at:
             return JsonResponse({'ok': False, 'error': 'Нельзя начать работу с заявкой на этом этапе'}, status=409)
         item.work_started_at = timezone.now()
@@ -683,6 +791,23 @@ def create_request(request):
     preferred_time = str(data.get('preferred_time', '')).strip()
     subcategory_ids = data.get('subcategory_ids') or []
     work_ids = data.get('work_ids') or []
+    idempotency_key = request.headers.get('Idempotency-Key', '').strip() or None
+
+    if data.get('consent') is not True:
+        return JsonResponse({
+            'ok': False,
+            'field': 'consent',
+            'error': 'Подтвердите согласие на обработку данных для связи по заявке.',
+        }, status=400)
+
+    if not idempotency_key:
+        return JsonResponse({
+            'ok': False,
+            'error': 'Не удалось подготовить безопасную отправку. Обновите страницу и попробуйте снова.',
+        }, status=400)
+
+    if idempotency_key and not re.fullmatch(r'[A-Za-z0-9._:-]{8,64}', idempotency_key):
+        return JsonResponse({'ok': False, 'error': 'Некорректный ключ отправки'}, status=400)
 
     digits = re.sub(r'\D', '', phone)
     if len(digits) < 10:
@@ -717,30 +842,59 @@ def create_request(request):
     if not selected and not selected_works and not issue:
         return JsonResponse({'ok': False, 'error': 'Укажите, что случилось'}, status=400)
 
-    service_request = ServiceRequest.objects.create(
-        full_name=full_name,
-        phone=phone,
-        issue=issue,
-        address=address,
-        preferred_time=preferred_time,
-    )
-    if selected:
-        service_request.subcategories.set(selected)
-    if selected_works:
-        service_request.works.set(selected_works)
+    payload_hash = hashlib.sha256(json.dumps({
+        'full_name': full_name,
+        'phone': phone,
+        'issue': issue,
+        'address': address,
+        'preferred_time': preferred_time,
+        'subcategory_ids': sorted(service.id for service in selected),
+        'work_ids': sorted(work.id for work in selected_works),
+    }, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
 
-    transaction.on_commit(
-        lambda: threading.Thread(
-            target=_send_new_request_push,
-            args=(service_request.id,),
-            daemon=True,
-        ).start()
-    )
+    with transaction.atomic():
+        values = {
+            'full_name': full_name,
+            'phone': phone,
+            'issue': issue,
+            'address': address,
+            'preferred_time': preferred_time,
+            'idempotency_hash': payload_hash,
+            'consented_at': timezone.now(),
+            'consent_version': '2026-11-05',
+        }
+        if idempotency_key:
+            service_request, created = ServiceRequest.objects.get_or_create(
+                idempotency_key=idempotency_key,
+                defaults=values,
+            )
+            if not created and service_request.idempotency_hash != payload_hash:
+                return JsonResponse({
+                    'ok': False,
+                    'error': 'Данные заявки изменились. Обновите страницу и отправьте заявку ещё раз.',
+                }, status=409)
+        else:
+            service_request = ServiceRequest.objects.create(**values)
+            created = True
+
+        if created:
+            if selected:
+                service_request.subcategories.set(selected)
+            if selected_works:
+                service_request.works.set(selected_works)
+
+            transaction.on_commit(
+                lambda: threading.Thread(
+                    target=_send_new_request_push,
+                    args=(service_request.id,),
+                    daemon=True,
+                ).start()
+            )
 
     return JsonResponse(
         {
             'ok': True,
-            'id': service_request.id,
-            'success_url': reverse('request_success'),
+            'request_number': service_request.public_number,
+            'success_url': reverse('request_status', args=[service_request.public_token]),
         }
     )

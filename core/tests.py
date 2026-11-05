@@ -8,6 +8,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core import signing
 from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 from PIL import Image
 
 from .models import Category, ServiceRequest, SubCategory, WithdrawalRequest, Work
@@ -49,15 +50,74 @@ class MultiServiceRequestTests(TestCase):
             data=json.dumps({
                 'full_name': 'Тестовый клиент',
                 'phone': '+7 999 123-45-67',
+                'consent': True,
                 'subcategory_ids': [self.first.id, self.second.id],
             }),
             content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='multi-service-request-1',
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['success_url'], '/request-success/')
+        self.assertRegex(response.json()['success_url'], r'^/request/[0-9a-f-]+/$')
         request = ServiceRequest.objects.get()
         self.assertEqual(request.subcategories.count(), 2)
+        self.assertIsNotNone(request.consented_at)
+        self.assertEqual(request.consent_version, '2026-11-05')
+
+    @patch('core.views.threading.Thread')
+    def test_repeated_idempotency_key_returns_the_same_public_request(self, thread):
+        payload = json.dumps({
+            'full_name': 'Повторный клиент',
+            'phone': '+7 999 123-45-67',
+            'consent': True,
+            'subcategory_ids': [self.first.id],
+        })
+        headers = {'HTTP_IDEMPOTENCY_KEY': '8b3fbdb4-7399-47e3-aa6a-4bd04fa6bf78'}
+
+        with self.captureOnCommitCallbacks(execute=True):
+            first = self.client.post('/api/requests/', data=payload, content_type='application/json', **headers)
+            repeated = self.client.post('/api/requests/', data=payload, content_type='application/json', **headers)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(ServiceRequest.objects.count(), 1)
+        self.assertEqual(first.json()['request_number'], repeated.json()['request_number'])
+        self.assertEqual(first.json()['success_url'], repeated.json()['success_url'])
+        self.assertRegex(first.json()['request_number'], r'^SG-\d{6}$')
+        self.assertIn('/request/', first.json()['success_url'])
+        thread.assert_called_once()
+
+    def test_idempotency_key_rejects_a_different_payload(self):
+        headers = {'HTTP_IDEMPOTENCY_KEY': 'f9fc0bd0-2d3c-48e3-9023-9fccf2e32b27'}
+        original = {
+            'full_name': 'Первый клиент',
+            'phone': '+7 999 123-45-67',
+            'consent': True,
+            'subcategory_ids': [self.first.id],
+        }
+        changed = {**original, 'phone': '+7 999 765-43-21'}
+
+        first = self.client.post('/api/requests/', data=json.dumps(original), content_type='application/json', **headers)
+        repeated = self.client.post('/api/requests/', data=json.dumps(changed), content_type='application/json', **headers)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(repeated.status_code, 409)
+        self.assertEqual(ServiceRequest.objects.count(), 1)
+
+    def test_idempotency_hash_uses_the_selected_set_not_input_order(self):
+        headers = {'HTTP_IDEMPOTENCY_KEY': 'canonical-selection-key'}
+        original = {
+            'full_name': 'Клиент', 'phone': '+7 999 123-45-67', 'consent': True,
+            'work_ids': [self.first_work.id, self.second_work.id],
+        }
+        reordered = {**original, 'work_ids': [self.second_work.id, self.first_work.id, self.first_work.id]}
+
+        first = self.client.post('/api/requests/', data=json.dumps(original), content_type='application/json', **headers)
+        repeated = self.client.post('/api/requests/', data=json.dumps(reordered), content_type='application/json', **headers)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(ServiceRequest.objects.count(), 1)
 
     def test_request_accepts_works_from_different_services(self):
         response = self.client.post(
@@ -65,9 +125,11 @@ class MultiServiceRequestTests(TestCase):
             data=json.dumps({
                 'full_name': 'Тестовый клиент',
                 'phone': '+7 999 123-45-67',
+                'consent': True,
                 'work_ids': [self.first_work.id, self.second_work.id],
             }),
             content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='multi-work-request-1',
         )
 
         self.assertEqual(response.status_code, 200)
@@ -75,12 +137,157 @@ class MultiServiceRequestTests(TestCase):
         self.assertEqual(request.works.count(), 2)
         self.assertEqual(request.subcategories.count(), 2)
 
+    def test_request_requires_explicit_data_processing_consent(self):
+        for consent in (None, False, 'true'):
+            with self.subTest(consent=consent):
+                payload = {
+                    'full_name': 'Клиент без согласия',
+                    'phone': '+7 999 123-45-67',
+                    'subcategory_ids': [self.first.id],
+                }
+                if consent is not None:
+                    payload['consent'] = consent
+                response = self.client.post(
+                    '/api/requests/',
+                    data=json.dumps(payload),
+                    content_type='application/json',
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json()['field'], 'consent')
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+
+    def test_request_requires_idempotency_key(self):
+        response = self.client.post(
+            '/api/requests/',
+            data=json.dumps({
+                'full_name': 'Клиент без ключа',
+                'phone': '+7 999 123-45-67',
+                'consent': True,
+                'subcategory_ids': [self.first.id],
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+
     def test_request_success_page(self):
         response = self.client.get('/request-success/')
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Заявка принята')
         self.assertContains(response, 'Вернуться на главную')
+
+    def test_public_request_page_shows_number_summary_and_next_step(self):
+        request = ServiceRequest.objects.create(
+            full_name='Иван',
+            phone='+7 999 123-45-67',
+            address='ул. Тестовая, 10',
+            preferred_time='Сегодня, 12:00–15:00',
+        )
+        request.subcategories.add(self.first)
+
+        response = self.client.get(f'/request/{request.public_token}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, request.public_number)
+        self.assertContains(response, 'ул. Тестовая, 10')
+        self.assertContains(response, self.first.name)
+        self.assertContains(response, 'Ожидает мастера')
+        self.assertEqual(response['Cache-Control'], 'private, no-store')
+        self.assertEqual(response['Referrer-Policy'], 'no-referrer')
+        self.assertEqual(response['X-Robots-Tag'], 'noindex, nofollow')
+
+    def test_public_request_page_maps_internal_states_to_client_language(self):
+        states = (
+            ({'assigned_to': get_user_model().objects.create_user(username='status-master')}, 'Мастер назначен'),
+            ({'work_started_at': timezone.now()}, 'Мастер выполняет работу'),
+            ({'completion_status': ServiceRequest.CompletionStatus.PENDING}, 'Проверяем результат'),
+            ({'completion_status': ServiceRequest.CompletionStatus.REJECTED}, 'Мастер уточняет результат'),
+            ({'completion_status': ServiceRequest.CompletionStatus.APPROVED}, 'Работа завершена'),
+            ({'completion_status': ServiceRequest.CompletionStatus.APPROVED, 'cancel_requested_at': timezone.now()}, 'Запрос на отмену принят'),
+        )
+        for index, (state, expected) in enumerate(states):
+            with self.subTest(expected=expected):
+                request = ServiceRequest.objects.create(phone=f'+790000001{index:02d}', **state)
+                self.assertContains(self.client.get(f'/request/{request.public_token}/'), expected)
+
+    def test_unknown_public_request_token_returns_404(self):
+        response = self.client.get('/request/00000000-0000-0000-0000-000000000000/')
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_client_can_request_callback_or_cancel_before_work_starts(self):
+        request = ServiceRequest.objects.create(phone='+7 999 123-45-67')
+
+        callback = self.client.post(f'/request/{request.public_token}/callback/', HTTP_ACCEPT='application/json')
+        cancel = self.client.post(f'/request/{request.public_token}/cancel/', HTTP_ACCEPT='application/json')
+
+        self.assertEqual(callback.status_code, 200)
+        self.assertEqual(cancel.status_code, 200)
+        request.refresh_from_db()
+        self.assertIsNotNone(request.callback_requested_at)
+        self.assertIsNotNone(request.cancel_requested_at)
+
+    def test_client_cannot_cancel_after_work_starts(self):
+        request = ServiceRequest.objects.create(phone='+7 999 123-45-67', work_started_at=timezone.now())
+
+        response = self.client.post(f'/request/{request.public_token}/cancel/', HTTP_ACCEPT='application/json')
+
+        self.assertEqual(response.status_code, 409)
+        request.refresh_from_db()
+        self.assertIsNone(request.cancel_requested_at)
+
+    def test_client_cannot_request_callback_after_work_starts(self):
+        request = ServiceRequest.objects.create(phone='+7 999 123-45-67', work_started_at=timezone.now())
+
+        response = self.client.post(
+            f'/request/{request.public_token}/callback/',
+            HTTP_ACCEPT='application/json',
+        )
+
+        self.assertEqual(response.status_code, 409)
+        request.refresh_from_db()
+        self.assertIsNone(request.callback_requested_at)
+
+    def test_public_actions_are_hidden_and_rejected_after_request_leaves_queue(self):
+        states = (
+            {'cancel_requested_at': timezone.now()},
+            {'completion_status': ServiceRequest.CompletionStatus.PENDING},
+            {'completion_status': ServiceRequest.CompletionStatus.REJECTED},
+            {'completion_status': ServiceRequest.CompletionStatus.APPROVED},
+        )
+        for index, state in enumerate(states):
+            with self.subTest(state=state):
+                request = ServiceRequest.objects.create(phone=f'+7 999 123-45-{index:02d}', **state)
+                page = self.client.get(f'/request/{request.public_token}/')
+                callback = self.client.post(
+                    f'/request/{request.public_token}/callback/', HTTP_ACCEPT='application/json'
+                )
+                cancel = self.client.post(
+                    f'/request/{request.public_token}/cancel/', HTTP_ACCEPT='application/json'
+                )
+
+                self.assertNotContains(page, f'/request/{request.public_token}/callback/')
+                self.assertNotContains(page, f'/request/{request.public_token}/cancel/')
+                self.assertEqual(callback.status_code, 409)
+                self.assertEqual(cancel.status_code, 409)
+
+    def test_html_callback_action_returns_to_status_with_feedback(self):
+        request = ServiceRequest.objects.create(phone='+7 999 123-45-67')
+
+        response = self.client.post(f'/request/{request.public_token}/callback/')
+
+        self.assertRedirects(response, f'/request/{request.public_token}/?action=callback')
+
+    def test_stale_html_action_returns_to_status_with_explanation(self):
+        request = ServiceRequest.objects.create(phone='+7 999 123-45-67', work_started_at=timezone.now())
+
+        response = self.client.post(f'/request/{request.public_token}/cancel/', follow=True)
+
+        self.assertRedirects(response, f'/request/{request.public_token}/?action=unavailable')
+        self.assertContains(response, 'уже в работе или закрыта')
 
 
 class MasterAppTests(TestCase):
@@ -118,6 +325,22 @@ class MasterAppTests(TestCase):
         self.assertEqual(self.client.post(f'/masters/api/requests/{self.request_item.id}/start/').status_code, 409)
         self.request_item.refresh_from_db()
         self.assertIsNotNone(self.request_item.work_started_at)
+
+    def test_master_cannot_claim_or_start_cancelled_request(self):
+        self.request_item.cancel_requested_at = timezone.now()
+        self.request_item.save(update_fields=('cancel_requested_at',))
+        self.client.force_login(self.master)
+
+        queue = self.client.get('/masters/api/requests/').json()
+        claim = self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/')
+
+        self.assertNotIn(self.request_item.id, [item['id'] for item in queue['available']])
+        self.assertEqual(claim.status_code, 409)
+
+        self.request_item.assigned_to = self.master
+        self.request_item.save(update_fields=('assigned_to',))
+        start = self.client.post(f'/masters/api/requests/{self.request_item.id}/start/')
+        self.assertEqual(start.status_code, 409)
 
     def test_start_requires_assigned_master(self):
         self.client.force_login(self.master)
@@ -213,14 +436,26 @@ class MasterAppTests(TestCase):
 
     def test_admin_request_list_and_detail_render(self):
         moderator = get_user_model().objects.create_superuser(username='admin-list', password='pass')
+        self.request_item.callback_requested_at = timezone.now()
+        self.request_item.cancel_requested_at = timezone.now()
+        self.request_item.consented_at = timezone.now()
+        self.request_item.consent_version = '2026-11-05'
+        self.request_item.save(update_fields=('callback_requested_at', 'cancel_requested_at', 'consented_at', 'consent_version'))
         ServiceRequest.objects.create(phone='+79000000002')
         ServiceRequest.objects.create(phone='+79000000003', completion_status=ServiceRequest.CompletionStatus.APPROVED, is_processed=True)
         pending = ServiceRequest.objects.create(phone='+79000000004', completion_status=ServiceRequest.CompletionStatus.PENDING, assigned_to=self.master)
         self.client.force_login(moderator)
         listing = self.client.get('/admin/core/servicerequest/')
         self.assertEqual(listing.status_code, 200)
+        self.assertContains(listing, 'field-client_action')
+        self.assertContains(listing, 'Перезвонить')
+        self.assertContains(listing, 'Отмена')
         detail = self.client.get(f'/admin/core/servicerequest/{self.request_item.pk}/change/')
         self.assertEqual(detail.status_code, 200)
+        self.assertContains(detail, 'field-callback_requested_at')
+        self.assertContains(detail, 'field-consented_at')
+        self.assertContains(detail, 'field-consent_version')
+        self.assertContains(detail, '2026-11-05')
         call_command('check_master_admin', check_approval=True)
         pending.refresh_from_db()
         self.assertEqual(pending.completion_status, ServiceRequest.CompletionStatus.PENDING)

@@ -1270,6 +1270,48 @@
     updateSelectionUI();
   });
 
+  const pendingRequestStorageKey = 'santehgo.pending-request';
+  const pendingRequestMaxAge = 30 * 60 * 1000;
+  let requestIdempotencyKey = '';
+
+  async function recoverPendingRequest() {
+    let pending;
+    try {
+      pending = JSON.parse(sessionStorage.getItem(pendingRequestStorageKey) || 'null');
+    } catch (_error) {
+      sessionStorage.removeItem(pendingRequestStorageKey);
+      return;
+    }
+    if (!pending?.key || !pending?.payload || !pending?.createdAt
+        || Date.now() - pending.createdAt > pendingRequestMaxAge) {
+      if (pending) sessionStorage.removeItem(pendingRequestStorageKey);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/requests/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken(),
+          'Idempotency-Key': pending.key,
+        },
+        body: pending.payload,
+      });
+      const result = await response.json();
+      if (response.ok && result.ok) {
+        sessionStorage.removeItem(pendingRequestStorageKey);
+        window.location.assign(result.success_url || '/request-success/');
+      } else if (response.status >= 400 && response.status < 500) {
+        sessionStorage.removeItem(pendingRequestStorageKey);
+      }
+    } catch (_error) {
+      // Keep a recent pending request so the next reload can safely replay it.
+    }
+  }
+
+  recoverPendingRequest();
+
   contactsForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     contactsError.hidden = true;
@@ -1288,10 +1330,31 @@
       work_ids: quoteDraft.work_ids.length
         ? quoteDraft.work_ids
         : currentlySelectedWorks.map((work) => Number(work.id)),
+      consent: formData.get('consent') === 'on',
     };
 
     const submitBtn = contactsForm.querySelector('button[type="submit"]');
+    const submitLabel = submitBtn.textContent;
+    const serializedPayload = JSON.stringify(payload);
+    try {
+      const pending = JSON.parse(sessionStorage.getItem(pendingRequestStorageKey) || 'null');
+      if (pending?.payload === serializedPayload && pending?.key) requestIdempotencyKey = pending.key;
+      else if (pending) requestIdempotencyKey = '';
+    } catch (_error) {
+      sessionStorage.removeItem(pendingRequestStorageKey);
+    }
+    if (!requestIdempotencyKey) {
+      requestIdempotencyKey = globalThis.crypto?.randomUUID?.()
+        || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+    sessionStorage.setItem(pendingRequestStorageKey, JSON.stringify({
+      key: requestIdempotencyKey,
+      payload: serializedPayload,
+      createdAt: Date.now(),
+    }));
     submitBtn.disabled = true;
+    submitBtn.textContent = 'Отправляем…';
+    contactsForm.setAttribute('aria-busy', 'true');
 
     try {
       const response = await fetch('/api/requests/', {
@@ -1299,6 +1362,7 @@
         headers: {
           'Content-Type': 'application/json',
           'X-CSRFToken': csrfToken(),
+          'Idempotency-Key': requestIdempotencyKey,
         },
         body: JSON.stringify(payload),
       });
@@ -1308,12 +1372,17 @@
         throw new Error(result.error || 'Не удалось отправить заявку');
       }
 
+      requestIdempotencyKey = '';
+      sessionStorage.removeItem(pendingRequestStorageKey);
       window.location.assign(result.success_url || '/request-success/');
     } catch (error) {
       contactsError.textContent = error.message || 'Ошибка отправки';
       contactsError.hidden = false;
+      contactsError.focus?.();
     } finally {
       submitBtn.disabled = false;
+      submitBtn.textContent = submitLabel;
+      contactsForm.removeAttribute('aria-busy');
     }
   });
 

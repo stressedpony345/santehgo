@@ -62,6 +62,112 @@ test('несколько работ сохраняются и попадают �
   await expect(requestDialog).toContainText('Проверка давления');
 });
 
+test('повтор отправки после сетевой ошибки сохраняет данные и ключ заявки', async ({ page }) => {
+  async function fillSameRequest() {
+    const card = page.locator('.service-card').first();
+    await card.getByRole('button', { name: 'Выбрать работы' }).click();
+    const worksDialog = page.getByRole('dialog').filter({ has: page.locator('#services-form') });
+    await worksDialog.getByRole('checkbox').first().check();
+    await worksDialog.getByRole('button', { name: 'Сохранить выбор' }).click();
+    await page.locator('#work-list').getByRole('button', { name: 'Оставить заявку' }).click();
+
+    const form = page.locator('#contacts-form');
+    await form.locator('[name="full_name"]').fill('Иван Иванов');
+    await form.locator('[name="phone"]').fill('+7 999 123-45-67');
+    await form.locator('[name="consent"]').check();
+    return form;
+  }
+
+  const keys: string[] = [];
+  let attempt = 0;
+  let createdRequestUrl = '';
+  await page.route('**/api/requests/', async (route) => {
+    keys.push(await route.request().headerValue('idempotency-key') || '');
+    attempt += 1;
+    if (attempt === 1) {
+      const serverResponse = await route.fetch();
+      const result = await serverResponse.json();
+      createdRequestUrl = result.success_url;
+      await route.abort('failed');
+      return;
+    }
+    await route.continue();
+  });
+
+  let form = await fillSameRequest();
+  await form.getByRole('button', { name: 'Отправить заявку' }).click();
+
+  await expect(page.locator('#contacts-error')).toBeVisible();
+  await expect(form.locator('[name="full_name"]')).toHaveValue('Иван Иванов');
+  await expect(form).not.toHaveAttribute('aria-busy');
+  await expect(form.getByRole('button', { name: 'Отправить заявку' })).toBeEnabled();
+  expect(createdRequestUrl).toMatch(/^\/request\/[0-9a-f-]+\/$/);
+
+  await page.reload();
+  await expect(page).toHaveURL(new RegExp(`${createdRequestUrl.replaceAll('/', '\\/')}$`));
+
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).not.toBe('');
+  expect(keys[1]).toBe(keys[0]);
+});
+
+test('изменённая заявка после ошибки получает новый ключ отправки', async ({ page }) => {
+  const card = page.locator('.service-card').first();
+  await card.getByRole('button', { name: 'Выбрать работы' }).click();
+  const worksDialog = page.getByRole('dialog').filter({ has: page.locator('#services-form') });
+  await worksDialog.getByRole('checkbox').first().check();
+  await worksDialog.getByRole('button', { name: 'Сохранить выбор' }).click();
+  await page.locator('#work-list').getByRole('button', { name: 'Оставить заявку' }).click();
+
+  const keys: string[] = [];
+  await page.route('**/api/requests/', async (route) => {
+    keys.push(await route.request().headerValue('idempotency-key') || '');
+    await route.fulfill({
+      status: keys.length === 1 ? 503 : 200,
+      contentType: 'application/json',
+      body: JSON.stringify(keys.length === 1
+        ? { ok: false, error: 'Временная ошибка' }
+        : { ok: true, success_url: '/request-success/' }),
+    });
+  });
+
+  const form = page.locator('#contacts-form');
+  await form.locator('[name="full_name"]').fill('Иван Иванов');
+  await form.locator('[name="phone"]').fill('+7 999 123-45-67');
+  await form.locator('[name="consent"]').check();
+  await form.getByRole('button', { name: 'Отправить заявку' }).click();
+  await expect(page.locator('#contacts-error')).toBeVisible();
+
+  await form.locator('[name="phone"]').fill('+7 999 765-43-21');
+  await form.getByRole('button', { name: 'Отправить заявку' }).click();
+  await expect(page).toHaveURL(/request-success/);
+
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).not.toBe('');
+  expect(keys[1]).not.toBe(keys[0]);
+});
+
+test('путь заявки и страница статуса помещаются на ширине 320 пикселей', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  const card = page.locator('.service-card').first();
+  await card.getByRole('button', { name: 'Выбрать работы' }).click();
+  const worksDialog = page.getByRole('dialog').filter({ has: page.locator('#services-form') });
+  await worksDialog.getByRole('checkbox').first().check();
+  await worksDialog.getByRole('button', { name: 'Сохранить выбор' }).click();
+  await page.locator('#work-list').getByRole('button', { name: 'Оставить заявку' }).click();
+
+  const form = page.locator('#contacts-form');
+  await form.locator('[name="full_name"]').fill('Мобильный клиент');
+  await form.locator('[name="phone"]').fill('+7 999 123-45-67');
+  await form.locator('[name="consent"]').check();
+  await form.getByRole('button', { name: 'Отправить заявку' }).click();
+
+  await expect(page).toHaveURL(/\/request\/[0-9a-f-]+\/$/);
+  await expect(page.getByRole('button', { name: 'Перезвоните мне' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Запросить отмену' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 test('отмена выбора не сохраняет работу и возвращает фокус', async ({ page }) => {
   const card = page.locator('.service-card').filter({ hasText: 'Диагностика протечки' });
   const trigger = card.getByRole('button', { name: 'Выбрать работы' });
