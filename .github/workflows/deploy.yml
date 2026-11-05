@@ -1,7 +1,11 @@
 name: Deploy production
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
     branches:
       - main
   workflow_dispatch:
@@ -16,19 +20,23 @@ concurrency:
 jobs:
   deploy:
     name: Deploy to production
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: production
 
     env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
       DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
       DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout tested revision
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
 
       - name: Validate deployment secrets
         env:
@@ -54,7 +62,7 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
 
       - name: Package tracked project files
-        run: git archive --format=tar.gz --output="$RUNNER_TEMP/santehgo-$GITHUB_SHA.tar.gz" HEAD
+        run: git archive --format=tar.gz --output="$RUNNER_TEMP/santehgo-$RELEASE_SHA.tar.gz" HEAD
 
       - name: Upload release archive
         run: |
@@ -64,8 +72,8 @@ jobs:
             -o BatchMode=yes \
             -o ConnectTimeout=30 \
             -o ServerAliveInterval=15 \
-            "$RUNNER_TEMP/santehgo-$GITHUB_SHA.tar.gz" \
-            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/santehgo-$GITHUB_SHA.tar.gz"
+            "$RUNNER_TEMP/santehgo-$RELEASE_SHA.tar.gz" \
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/santehgo-$RELEASE_SHA.tar.gz"
 
       - name: Activate release
         run: |
@@ -76,7 +84,7 @@ jobs:
             -o ConnectTimeout=30 \
             -o ServerAliveInterval=15 \
             "$DEPLOY_USER@$DEPLOY_HOST" \
-            "DEPLOY_PATH='$DEPLOY_PATH' RELEASE_ARCHIVE='/tmp/santehgo-$GITHUB_SHA.tar.gz' sh -s" <<'REMOTE'
+            "DEPLOY_PATH='$DEPLOY_PATH' RELEASE_ARCHIVE='/tmp/santehgo-$RELEASE_SHA.tar.gz' sh -s" <<'REMOTE'
           set -eu
           cleanup() {
             rm -f "$RELEASE_ARCHIVE"
