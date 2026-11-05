@@ -25,9 +25,10 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .models import Category, CompletionMedia, ExtraWork, PushSubscription, ServiceRequest, SubCategory, WithdrawalRequest, Work
 from .notifications import enqueue_client_notification
+from .roles import is_master
 
 
-master_required = user_passes_test(lambda user: user.is_active and user.is_staff, login_url='/masters/login/')
+master_required = user_passes_test(is_master, login_url='/masters/login/')
 
 
 def _vapid_keys():
@@ -102,6 +103,13 @@ def _request_payload(service_request):
         'payment_confirmed_at': timezone.localtime(service_request.payment_confirmed_at).strftime('%d.%m.%Y, %H:%M') if service_request.payment_confirmed_at else '',
         'assigned_name': service_request.assigned_to.get_full_name() or service_request.assigned_to.username if service_request.assigned_to else '',
     }
+
+
+def _available_request_payload(service_request):
+    payload = _request_payload(service_request)
+    for private_field in ('full_name', 'phone', 'address', 'master_payout'):
+        payload.pop(private_field, None)
+    return payload
 
 
 def _send_new_request_push(request_id):
@@ -391,12 +399,12 @@ def request_cancel(request, public_token):
 
 
 def master_login(request):
-    if request.user.is_authenticated and request.user.is_staff:
+    if is_master(request.user):
         return redirect('master_dashboard')
     form = AuthenticationForm(request, data=request.POST or None)
     if request.method == 'POST' and form.is_valid():
         user = form.get_user()
-        if not user.is_staff:
+        if not is_master(user):
             form.add_error(None, 'Доступ разрешён только мастерам')
         else:
             login(request, user)
@@ -467,6 +475,8 @@ def master_requests_api(request):
         is_processed=False,
         assigned_to__isnull=True,
         cancel_requested_at__isnull=True,
+        work_started_at__isnull=True,
+        completion_status=ServiceRequest.CompletionStatus.NONE,
     )
     mine = queryset.filter(assigned_to=request.user)
     approved_income = sum(
@@ -476,7 +486,7 @@ def master_requests_api(request):
     )
     latest_id = ServiceRequest.objects.order_by('-id').values_list('id', flat=True).first() or 0
     return JsonResponse({
-        'available': [_request_payload(item) for item in available],
+        'available': [_available_request_payload(item) for item in available],
         'mine': [_request_payload(item) for item in mine],
         'approved_income': approved_income,
         'latest_id': latest_id,
@@ -635,6 +645,8 @@ def master_claim_request(request, request_id):
             return JsonResponse({'ok': False, 'error': 'Заявка уже завершена'}, status=409)
         if service_request.cancel_requested_at:
             return JsonResponse({'ok': False, 'error': 'Клиент запросил отмену заявки'}, status=409)
+        if service_request.work_started_at or service_request.completion_status != ServiceRequest.CompletionStatus.NONE:
+            return JsonResponse({'ok': False, 'error': 'Заявка уже вышла из общей очереди'}, status=409)
         if service_request.assigned_to_id:
             return JsonResponse({'ok': False, 'error': 'Заявку уже взял другой мастер'}, status=409)
         service_request.assigned_to = request.user

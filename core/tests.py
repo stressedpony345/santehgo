@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core import signing
 from django.core.management import call_command
@@ -442,6 +443,7 @@ class ClientNotificationTests(TestCase):
     @override_settings(CLIENT_NOTIFICATIONS_ENABLED=True)
     def test_successful_transitions_enqueue_each_event_once(self):
         master = get_user_model().objects.create_user(username='notify-master', password='pass', is_staff=True)
+        master.groups.add(Group.objects.get_or_create(name='masters')[0])
         moderator = get_user_model().objects.create_superuser(username='notify-admin', password='pass')
         assigned_request = ServiceRequest.objects.create(phone='+7 999 123-45-67')
         cancelled_request = ServiceRequest.objects.create(phone='+7 999 123-45-68')
@@ -596,12 +598,25 @@ class MasterAppTests(TestCase):
             password='Strong-test-pass-2026',
             is_staff=True,
         )
+        self.master.groups.add(Group.objects.get_or_create(name='masters')[0])
         category = Category.objects.create(name='Сантехника', slug='master-test')
         service = SubCategory.objects.create(category=category, name='Ремонт', approximate_price=1500)
         self.work = Work.objects.create(service=service, name='Замена крана', price=2300)
         self.request_item = ServiceRequest.objects.create(phone='+79000000000', issue='Течёт кран')
         self.request_item.subcategories.add(service)
         self.request_item.works.add(self.work)
+
+    def test_staff_without_master_role_cannot_open_master_api(self):
+        dispatcher = get_user_model().objects.create_user(
+            username='dispatcher-only', password='pass', is_staff=True,
+        )
+        dispatcher.groups.add(Group.objects.get_or_create(name='dispatchers')[0])
+        self.client.force_login(dispatcher)
+
+        response = self.client.get('/masters/api/requests/')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/masters/login/', response.url)
 
     def test_master_pages_require_login(self):
         response = self.client.get('/masters/')
@@ -612,11 +627,16 @@ class MasterAppTests(TestCase):
         self.client.force_login(self.master)
         queue = self.client.get('/masters/api/requests/').json()
         self.assertEqual(queue['available'][0]['price'], 2300)
+        self.assertNotIn('phone', queue['available'][0])
+        self.assertNotIn('full_name', queue['available'][0])
+        self.assertNotIn('address', queue['available'][0])
 
         response = self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/')
         self.assertEqual(response.status_code, 200)
         self.request_item.refresh_from_db()
         self.assertEqual(self.request_item.assigned_to, self.master)
+        mine = self.client.get('/masters/api/requests/').json()['mine'][0]
+        self.assertEqual(mine['phone'], self.request_item.phone)
         self.assertIsNone(self.request_item.work_started_at)
         self.assertEqual(self.client.get('/masters/api/requests/').json()['mine'][0]['work_started_at'], '')
         self.assertEqual(self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/').status_code, 409)
@@ -635,11 +655,25 @@ class MasterAppTests(TestCase):
 
         self.assertNotIn(self.request_item.id, [item['id'] for item in queue['available']])
         self.assertEqual(claim.status_code, 409)
-
         self.request_item.assigned_to = self.master
         self.request_item.save(update_fields=('assigned_to',))
         start = self.client.post(f'/masters/api/requests/{self.request_item.id}/start/')
         self.assertEqual(start.status_code, 409)
+
+    def test_master_cannot_claim_request_that_already_left_the_queue(self):
+        self.client.force_login(self.master)
+        invalid_states = (
+            {'work_started_at': timezone.now()},
+            {'completion_status': ServiceRequest.CompletionStatus.PENDING},
+            {'completion_status': ServiceRequest.CompletionStatus.REJECTED},
+            {'completion_status': ServiceRequest.CompletionStatus.APPROVED},
+        )
+        for index, state in enumerate(invalid_states):
+            item = ServiceRequest.objects.create(phone=f'+790000001{index:02d}', **state)
+            with self.subTest(state=state):
+                available_ids = [entry['id'] for entry in self.client.get('/masters/api/requests/').json()['available']]
+                self.assertNotIn(item.pk, available_ids)
+                self.assertEqual(self.client.post(f'/masters/api/requests/{item.pk}/claim/').status_code, 409)
 
     def test_start_requires_assigned_master(self):
         self.client.force_login(self.master)
@@ -647,6 +681,7 @@ class MasterAppTests(TestCase):
         self.assertEqual(self.client.post(url).status_code, 404)
         self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/')
         other = get_user_model().objects.create_user(username='other-starter', password='pass', is_staff=True)
+        other.groups.add(Group.objects.get_or_create(name='masters')[0])
         self.client.force_login(other)
         self.assertEqual(self.client.post(url).status_code, 404)
 
@@ -692,6 +727,7 @@ class MasterAppTests(TestCase):
         for invalid in ({'name': '', 'price': 500}, {'name': 'Тест', 'price': -1}, {'work_id': 999999}):
             self.assertEqual(self.client.post(url, json.dumps(invalid), content_type='application/json').status_code, 400)
         other = get_user_model().objects.create_user(username='other-master', password='pass', is_staff=True)
+        other.groups.add(Group.objects.get_or_create(name='masters')[0])
         self.client.force_login(other)
         self.assertEqual(self.client.post(url, body, content_type='application/json').status_code, 404)
         self.client.force_login(self.master)
@@ -841,6 +877,7 @@ class MasterAppTests(TestCase):
         self.assertEqual(qr_image.status_code, 200)
         self.assertTrue(qr_image.content.startswith(b'\x89PNG'))
         other = get_user_model().objects.create_user(username='other-payment', password='pass', is_staff=True)
+        other.groups.add(Group.objects.get_or_create(name='masters')[0])
         self.client.force_login(other)
         self.assertEqual(self.client.get(f'/masters/api/requests/{second.pk}/payment/qr/').status_code, 404)
         self.assertEqual(self.client.post(f'/masters/api/requests/{second.pk}/payment/confirm/').status_code, 404)
