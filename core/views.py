@@ -816,6 +816,11 @@ def master_complete_request(request, request_id):
             return JsonResponse({'ok': False, 'error': 'Каждое фото должно быть меньше 10 МБ'}, status=400)
         try:
             image = Image.open(photo)
+            if image.width * image.height > settings.MAX_COMPLETION_IMAGE_PIXELS:
+                return JsonResponse({
+                    'ok': False,
+                    'error': 'Разрешение фото слишком высокое. Загрузите фото меньшего размера.',
+                }, status=400)
             image.verify()
             if image.format not in ('JPEG', 'PNG', 'WEBP') or not photo.name.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
                 raise ValueError
@@ -920,6 +925,17 @@ def create_request(request):
     work_ids = data.get('work_ids') or []
     idempotency_key = request.headers.get('Idempotency-Key', '').strip() or None
 
+    bounded_fields = {
+        'full_name': (full_name, 'ФИО слишком длинное.'),
+        'phone': (phone, 'Телефон слишком длинный.'),
+        'issue': (issue, 'Описание слишком длинное.'),
+        'address': (address, 'Адрес слишком длинный.'),
+        'preferred_time': (preferred_time, 'Желаемое время слишком длинное.'),
+    }
+    for field_name, (value, error) in bounded_fields.items():
+        if len(value) > ServiceRequest._meta.get_field(field_name).max_length:
+            return JsonResponse({'ok': False, 'field': field_name, 'error': error}, status=400)
+
     if data.get('consent') is not True:
         return JsonResponse({
             'ok': False,
@@ -937,25 +953,47 @@ def create_request(request):
         return JsonResponse({'ok': False, 'error': 'Некорректный ключ отправки'}, status=400)
 
     digits = re.sub(r'\D', '', phone)
-    if len(digits) < 10:
-        return JsonResponse({'ok': False, 'error': 'Укажите корректный телефон'}, status=400)
+    if not re.fullmatch(r'[\d+()\s-]+', phone) or len(digits) not in (10, 11):
+        return JsonResponse({
+            'ok': False,
+            'field': 'phone',
+            'error': 'Укажите корректный телефон',
+        }, status=400)
 
     selected = []
+    if subcategory_ids and not isinstance(subcategory_ids, list):
+        return JsonResponse({
+            'ok': False,
+            'field': 'subcategory_ids',
+            'error': 'Некорректный список услуг',
+        }, status=400)
     if isinstance(subcategory_ids, list) and subcategory_ids:
         try:
-            ids = [int(item) for item in subcategory_ids]
+            ids = {int(item) for item in subcategory_ids}
         except (TypeError, ValueError):
-            return JsonResponse({'ok': False, 'error': 'Некорректный список услуг'}, status=400)
+            return JsonResponse({'ok': False, 'field': 'subcategory_ids', 'error': 'Некорректный список услуг'}, status=400)
         selected = list(
             SubCategory.objects.filter(id__in=ids, is_active=True, category__is_active=True)
         )
+        if len(selected) != len(ids):
+            return JsonResponse({
+                'ok': False,
+                'field': 'subcategory_ids',
+                'error': 'Одна из выбранных услуг больше недоступна. Выберите услуги заново.',
+            }, status=400)
 
     selected_works = []
+    if work_ids and not isinstance(work_ids, list):
+        return JsonResponse({
+            'ok': False,
+            'field': 'work_ids',
+            'error': 'Некорректный список работ',
+        }, status=400)
     if isinstance(work_ids, list) and work_ids:
         try:
-            ids = [int(item) for item in work_ids]
+            ids = {int(item) for item in work_ids}
         except (TypeError, ValueError):
-            return JsonResponse({'ok': False, 'error': 'Некорректный список работ'}, status=400)
+            return JsonResponse({'ok': False, 'field': 'work_ids', 'error': 'Некорректный список работ'}, status=400)
         selected_works = list(
             Work.objects.filter(
                 id__in=ids,
@@ -964,6 +1002,12 @@ def create_request(request):
                 service__category__is_active=True,
             ).select_related('service')
         )
+        if len(selected_works) != len(ids):
+            return JsonResponse({
+                'ok': False,
+                'field': 'work_ids',
+                'error': 'Одна из выбранных работ больше недоступна. Выберите работы заново.',
+            }, status=400)
         selected = list({work.service for work in selected_works})
 
     if not selected and not selected_works and not issue:

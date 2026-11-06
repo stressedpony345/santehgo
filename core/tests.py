@@ -282,6 +282,169 @@ class MultiServiceRequestTests(TestCase):
         self.assertTrue(response.json()['ok'])
         self.assertEqual(ServiceRequest.objects.count(), 0)
 
+    def test_request_rejects_full_name_longer_than_model_limit(self):
+        response = self.client.post(
+            '/api/requests/',
+            data=json.dumps({
+                'full_name': 'И' * 201,
+                'phone': '+7 999 123-45-67',
+                'consent': True,
+                'subcategory_ids': [self.first.id],
+            }),
+            content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='oversized-full-name',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['field'], 'full_name')
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+
+    def test_request_rejects_phone_longer_than_model_limit(self):
+        response = self.client.post(
+            '/api/requests/',
+            data=json.dumps({
+                'phone': '+' + ('7' * 32),
+                'consent': True,
+                'subcategory_ids': [self.first.id],
+            }),
+            content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='oversized-phone',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['field'], 'phone')
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+
+    def test_request_rejects_issue_longer_than_model_limit(self):
+        response = self.client.post(
+            '/api/requests/',
+            data=json.dumps({
+                'phone': '+7 999 123-45-67',
+                'issue': 'А' * 501,
+                'consent': True,
+            }),
+            content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='oversized-issue',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['field'], 'issue')
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+
+    def test_request_rejects_address_longer_than_model_limit(self):
+        response = self.client.post(
+            '/api/requests/',
+            data=json.dumps({
+                'phone': '+7 999 123-45-67',
+                'address': 'У' * 241,
+                'consent': True,
+                'subcategory_ids': [self.first.id],
+            }),
+            content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='oversized-address',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['field'], 'address')
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+
+    def test_request_rejects_preferred_time_longer_than_model_limit(self):
+        response = self.client.post(
+            '/api/requests/',
+            data=json.dumps({
+                'phone': '+7 999 123-45-67',
+                'preferred_time': 'З' * 81,
+                'consent': True,
+                'subcategory_ids': [self.first.id],
+            }),
+            content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='oversized-preferred-time',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['field'], 'preferred_time')
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+
+    def test_request_rejects_partially_unknown_service_selection(self):
+        response = self.client.post(
+            '/api/requests/',
+            data=json.dumps({
+                'phone': '+7 999 123-45-67',
+                'consent': True,
+                'subcategory_ids': [self.first.id, 999999],
+            }),
+            content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='unknown-service-selection',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['field'], 'subcategory_ids')
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+
+    def test_request_rejects_partially_unknown_work_selection(self):
+        response = self.client.post(
+            '/api/requests/',
+            data=json.dumps({
+                'phone': '+7 999 123-45-67',
+                'consent': True,
+                'work_ids': [self.first_work.id, 999999],
+            }),
+            content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='unknown-work-selection',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['field'], 'work_ids')
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+
+    def test_request_rejects_service_selection_that_is_not_a_list(self):
+        response = self.client.post(
+            '/api/requests/',
+            data=json.dumps({
+                'phone': '+7 999 123-45-67',
+                'consent': True,
+                'subcategory_ids': str(self.first.id),
+            }),
+            content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='service-selection-not-list',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['field'], 'subcategory_ids')
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+
+    def test_request_rejects_work_selection_that_is_not_a_list(self):
+        response = self.client.post(
+            '/api/requests/',
+            data=json.dumps({
+                'phone': '+7 999 123-45-67',
+                'consent': True,
+                'work_ids': str(self.first_work.id),
+            }),
+            content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='work-selection-not-list',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['field'], 'work_ids')
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+
+    def test_request_rejects_phone_with_letters(self):
+        response = self.client.post(
+            '/api/requests/',
+            data=json.dumps({
+                'phone': '+7 CALL 999 123-45-67',
+                'consent': True,
+                'subcategory_ids': [self.first.id],
+            }),
+            content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='phone-with-letters',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['field'], 'phone')
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+
     def test_request_success_page(self):
         response = self.client.get('/request-success/')
 
@@ -907,6 +1070,23 @@ class MasterAppTests(TestCase):
 
         queue = self.client.get('/masters/api/requests/').json()
         self.assertEqual(queue['approved_income'], 0)
+
+    @override_settings(MAX_COMPLETION_IMAGE_PIXELS=5000)
+    def test_completion_rejects_image_exceeding_pixel_limit(self):
+        self.client.force_login(self.master)
+        self.client.post(f'/masters/api/requests/{self.request_item.id}/claim/')
+        self.client.post(f'/masters/api/requests/{self.request_item.id}/start/')
+        image = Image.new('RGB', (100, 100), color='white')
+        image_bytes = BytesIO()
+        image.save(image_bytes, format='PNG')
+        photo = SimpleUploadedFile('oversized.png', image_bytes.getvalue(), content_type='image/png')
+
+        response = self.client.post(f'/masters/api/requests/{self.request_item.id}/complete/', {'photo': photo})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('разрешение', response.json()['error'].lower())
+        self.request_item.refresh_from_db()
+        self.assertEqual(self.request_item.completion_status, ServiceRequest.CompletionStatus.NONE)
 
     def _approve(self):
         moderator, _ = get_user_model().objects.get_or_create(username='moderator', defaults={'is_staff': True, 'is_superuser': True})
