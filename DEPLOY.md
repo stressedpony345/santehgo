@@ -131,3 +131,20 @@ journalctl -u santehgo-monitor.service
 
 Тест тревоги: временно укажите `MONITOR_DISK_PERCENT=0`, запустите service,
 убедитесь, что сигнал получен, и верните порог `85`.
+
+## Откат релиза
+
+Деплой распаковывает каждый commit в `/opt/santehgo/releases/<sha>` и меняет
+`current` только после system checks. Перед миграциями создаётся проверенный backup.
+Если активация не проходит, прежние контейнеры запускаются снова.
+
+Ручной откат к `previous`:
+
+```bash
+sudo /opt/santehgo/current/ops/rollback-release.sh /opt/santehgo
+curl --fail https://xn--80agf5ahnjz.xn--p1ai/health/ready/
+```
+
+Обычный rollback возвращает код, но не откатывает схему БД. Каждая production-миграция
+должна быть backward-compatible. Если она несовместима, вместо автоотката нужно
+остановить запись, восстановить pre-deploy backup и повторить restore drill.
