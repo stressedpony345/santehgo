@@ -1,6 +1,8 @@
 import json
 import urllib.error
-from io import BytesIO
+import tempfile
+from pathlib import Path
+from io import BytesIO, StringIO
 from datetime import date, timedelta
 from unittest.mock import patch
 
@@ -8,6 +10,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core import signing
+from django.db.utils import DatabaseError
 from django.core.management import call_command
 from django.test import TestCase
 from django.test import override_settings
@@ -48,6 +51,59 @@ class MultiServiceRequestTests(TestCase):
         self.assertContains(response, 'work-list-submit')
         self.assertContains(response, '/personal-data-consent/')
         self.assertContains(response, 'name="company_website"')
+
+    def test_readiness_reports_healthy_database_and_media_storage(self):
+        with tempfile.TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=Path(media_root)):
+            response = self.client.get('/health/ready/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'ok': True})
+
+    @patch('core.views.connection.cursor', side_effect=DatabaseError('database unavailable'))
+    def test_readiness_hides_dependency_failure_details(self, _cursor):
+        response = self.client.get('/health/ready/')
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {'ok': False})
+
+    @override_settings(
+        ERROR_ALERTS_ENABLED=True,
+        ERROR_ALERT_WEBHOOK_URL='https://alerts.example.test/hook',
+        ERROR_ALERT_TOKEN='alert-token',
+        PUBLIC_BASE_URL='https://example.test',
+    )
+    @patch('core.monitoring.urllib.request.urlopen')
+    def test_error_alert_uses_authenticated_json_webhook(self, urlopen):
+        from .monitoring import send_error_alert
+
+        send_error_alert('Test failure', {'component': 'django'})
+
+        outbound = urlopen.call_args.args[0]
+        payload = json.loads(outbound.data.decode('utf-8'))
+        self.assertEqual(outbound.headers['Authorization'], 'Bearer alert-token')
+        self.assertEqual(payload['message'], 'Test failure')
+        self.assertEqual(payload['context'], {'component': 'django'})
+
+    @override_settings(
+        ERROR_ALERTS_ENABLED=True,
+        ERROR_ALERT_WEBHOOK_URL='http://localhost/alerts',
+        ERROR_ALERT_TOKEN='',
+    )
+    def test_enabled_error_alerts_require_public_https_webhook_and_token(self):
+        from .checks import check_error_alert_configuration
+
+        error_ids = {error.id for error in check_error_alert_configuration(None)}
+
+        self.assertEqual(error_ids, {'core.E030', 'core.E031'})
+
+    @patch('core.monitoring.send_error_alert', return_value=True)
+    def test_test_alert_command_confirms_delivery(self, send_error_alert):
+        output = StringIO()
+
+        call_command('send_test_alert', stdout=output)
+
+        send_error_alert.assert_called_once()
+        self.assertIn('доставлена', output.getvalue().lower())
 
     @override_settings(
         LEGAL_OPERATOR_NAME='ИП Иванов Иван Иванович',

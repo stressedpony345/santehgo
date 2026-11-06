@@ -7,13 +7,16 @@ import threading
 import urllib.error
 import urllib.request
 from datetime import timedelta
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from django.conf import settings
 from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
-from django.db import close_old_connections, transaction
+from django.db import close_old_connections, connection, transaction
+from django.db.utils import DatabaseError
 from django.db.models import Q
 from django.core import signing
 from django.http import Http404, HttpResponse, JsonResponse
@@ -32,6 +35,21 @@ from .rate_limits import consume_public_request_attempt
 
 
 master_required = user_passes_test(is_master, login_url='/masters/login/')
+
+
+@require_GET
+def readiness(request):
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+            cursor.fetchone()
+        media_root = Path(settings.MEDIA_ROOT)
+        media_root.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile(prefix='.health-', dir=media_root):
+            pass
+    except (DatabaseError, OSError):
+        return JsonResponse({'ok': False}, status=503)
+    return JsonResponse({'ok': True})
 
 
 def _vapid_keys():

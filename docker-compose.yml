@@ -49,6 +49,10 @@ services:
       PUBLIC_REQUEST_RATE_LIMIT: "${PUBLIC_REQUEST_RATE_LIMIT:-5}"
       PUBLIC_REQUEST_RATE_WINDOW_SECONDS: "${PUBLIC_REQUEST_RATE_WINDOW_SECONDS:-300}"
       MAX_COMPLETION_IMAGE_PIXELS: "${MAX_COMPLETION_IMAGE_PIXELS:-40000000}"
+      ERROR_ALERTS_ENABLED: "${ERROR_ALERTS_ENABLED:-false}"
+      ERROR_ALERT_WEBHOOK_URL: "${ERROR_ALERT_WEBHOOK_URL:-}"
+      ERROR_ALERT_TOKEN: "${ERROR_ALERT_TOKEN:-}"
+      ERROR_ALERT_TIMEOUT: "${ERROR_ALERT_TIMEOUT:-3}"
     depends_on:
       db:
         condition: service_healthy
@@ -57,7 +61,7 @@ services:
       - media_files:/app/media
       - static_files:/app/staticfiles
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/health/ready/', headers={'Host':'127.0.0.1'}), timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 5

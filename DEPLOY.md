@@ -95,3 +95,18 @@ journalctl -u santehgo-backup.service
 
 Копия только на том же VPS не защищает от потери сервера. Успешная off-host синхронизация
 через `OFFSITE_BACKUP_TARGET` обязательна для production-приёмки.
+
+## Health monitoring и тревоги
+
+`/health/ready/` выполняет SQL-запрос и пробную запись в media. Docker healthcheck
+и внешний uptime-monitor должны проверять именно этот URL. Ответ не раскрывает
+технические детали.
+
+Для ERROR-тревог заполните `ERROR_ALERT_WEBHOOK_URL` и `ERROR_ALERT_TOKEN`, затем
+включите `ERROR_ALERTS_ENABLED=true`. Production-check не примет HTTP, localhost,
+приватный IP или пустой токен. После перезапуска обязательно проверьте
+фактическую доставку:
+
+```bash
+docker compose exec -T web python manage.py send_test_alert
+```

@@ -179,6 +179,10 @@ PUBLIC_REQUEST_RATE_LIMIT = int(os.environ.get('PUBLIC_REQUEST_RATE_LIMIT', '5')
 PUBLIC_REQUEST_RATE_WINDOW_SECONDS = int(os.environ.get('PUBLIC_REQUEST_RATE_WINDOW_SECONDS', '300'))
 PUBLIC_CLIENT_IP_HEADER = os.environ.get('PUBLIC_CLIENT_IP_HEADER', 'REMOTE_ADDR')
 MAX_COMPLETION_IMAGE_PIXELS = int(os.environ.get('MAX_COMPLETION_IMAGE_PIXELS', '40000000'))
+ERROR_ALERTS_ENABLED = os.environ.get('ERROR_ALERTS_ENABLED', 'false').lower() in {'1', 'true', 'yes'}
+ERROR_ALERT_WEBHOOK_URL = os.environ.get('ERROR_ALERT_WEBHOOK_URL', '')
+ERROR_ALERT_TOKEN = os.environ.get('ERROR_ALERT_TOKEN', '')
+ERROR_ALERT_TIMEOUT = float(os.environ.get('ERROR_ALERT_TIMEOUT', '3'))
 
 LOGIN_URL = '/masters/login/'
 MASTER_VAPID_KEY_PATH = Path(os.environ.get('MASTER_VAPID_KEY_PATH', BASE_DIR / 'data' / 'vapid_private.pem'))
@@ -191,5 +195,23 @@ MASTER_VAPID_SUBJECT = os.environ.get('MASTER_VAPID_SUBJECT', 'mailto:admin@sant
 MAILERS = {
     'default': {
         'BACKEND': 'django.core.mail.backends.smtp.EmailBackend',
+    },
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'error_alert': {
+            'class': 'core.monitoring.ErrorAlertHandler',
+            'level': 'ERROR',
+        },
+    },
+    'loggers': {
+        'django.request': {
+            'handlers': ['error_alert'],
+            'level': 'ERROR',
+            'propagate': True,
+        },
     },
 }

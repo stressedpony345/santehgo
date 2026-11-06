@@ -83,3 +83,16 @@ def check_production_security(app_configs, **kwargs):
     if 'postgresql' in database.get('ENGINE', '') and database.get('PASSWORD', '') in ('', 'change-this-password'):
         errors.append(Error('В production укажите сильный пароль PostgreSQL.', id='core.E027'))
     return errors
+
+
+@register()
+def check_error_alert_configuration(app_configs, **kwargs):
+    if not settings.ERROR_ALERTS_ENABLED:
+        return []
+
+    errors = []
+    if not _is_public_https_url(settings.ERROR_ALERT_WEBHOOK_URL.strip()):
+        errors.append(Error('Укажите публичный HTTPS URL канала тревог.', id='core.E030'))
+    if not settings.ERROR_ALERT_TOKEN.strip():
+        errors.append(Error('Укажите токен канала тревог.', id='core.E031'))
+    return errors
