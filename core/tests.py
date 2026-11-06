@@ -59,6 +59,31 @@ class MultiServiceRequestTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'ok': True})
 
+    def test_compose_readiness_probe_marks_loopback_request_as_proxied_https(self):
+        compose = (Path(__file__).resolve().parent.parent / 'docker-compose.yml').read_text(encoding='utf-8')
+        web_healthcheck = compose.split('  web:', 1)[1].split('  notifications:', 1)[0].split('    healthcheck:', 1)[1]
+
+        self.assertIn("'X-Forwarded-Proto':'https'", web_healthcheck)
+        with tempfile.TemporaryDirectory() as media_root, self.settings(
+            MEDIA_ROOT=Path(media_root),
+            ALLOWED_HOSTS=['example.test'],
+            SECURE_SSL_REDIRECT=True,
+            SECURE_PROXY_SSL_HEADER=('HTTP_X_FORWARDED_PROTO', 'https'),
+        ):
+            redirected = self.client.get('/health/ready/', HTTP_HOST='example.test')
+            healthy = self.client.get(
+                '/health/ready/', HTTP_HOST='example.test', HTTP_X_FORWARDED_PROTO='https',
+            )
+
+        self.assertEqual(redirected.status_code, 301)
+        self.assertEqual(healthy.status_code, 200)
+
+    def test_compose_readiness_probe_uses_an_allowed_production_host(self):
+        compose = (Path(__file__).resolve().parent.parent / 'docker-compose.yml').read_text(encoding='utf-8')
+        web_healthcheck = compose.split('  web:', 1)[1].split('  notifications:', 1)[0].split('    healthcheck:', 1)[1]
+
+        self.assertIn("os.environ['DJANGO_ALLOWED_HOSTS'].split(',')[0].strip()", web_healthcheck)
+
     @patch('core.views.connection.cursor', side_effect=DatabaseError('database unavailable'))
     def test_readiness_hides_dependency_failure_details(self, _cursor):
         response = self.client.get('/health/ready/')

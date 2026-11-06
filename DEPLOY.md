@@ -101,6 +101,9 @@ journalctl -u santehgo-backup.service
 `/health/ready/` выполняет SQL-запрос и пробную запись в media. Docker healthcheck
 и внешний uptime-monitor должны проверять именно этот URL. Ответ не раскрывает
 технические детали.
+Внутренний probe обращается к loopback с первым хостом из `DJANGO_ALLOWED_HOSTS`
+и заголовком `X-Forwarded-Proto: https`, чтобы production HTTPS-редирект не
+превращал исправный контейнер в unhealthy. Внешний монитор проверяет HTTPS-адрес.
 
 Для ERROR-тревог заполните `ERROR_ALERT_WEBHOOK_URL` и `ERROR_ALERT_TOKEN`, затем
 включите `ERROR_ALERTS_ENABLED=true`. Production-check не примет HTTP, localhost,
