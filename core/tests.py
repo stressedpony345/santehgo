@@ -10,14 +10,140 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core import signing
+from django.db import connection
 from django.db.utils import DatabaseError
 from django.core.management import call_command
-from django.test import SimpleTestCase, TestCase
+from django.test import Client, SimpleTestCase, TestCase
 from django.test import override_settings
 from django.utils import timezone
 from PIL import Image
 
-from .models import Category, ClientNotification, ServiceRequest, ServiceRequestEvent, SubCategory, WithdrawalRequest, Work
+from .models import Category, ClientNotification, ProductMetric, ServiceRequest, ServiceRequestEvent, SubCategory, WithdrawalRequest, Work
+
+
+class ProductMetricTests(TestCase):
+    def test_funnel_counters_have_an_anonymous_aggregate_table(self):
+        with connection.cursor() as cursor:
+            tables = connection.introspection.table_names(cursor)
+
+        self.assertIn('core_productmetric', tables)
+
+    def test_repeated_request_counts_only_one_anonymous_completion(self):
+        category = Category.objects.create(name='Тест', slug='metric-test')
+        service = SubCategory.objects.create(category=category, name='Ремонт', approximate_price=1000)
+        payload = json.dumps({'phone': '+7 999 123-45-67', 'consent': True, 'subcategory_ids': [service.pk]})
+        for _ in range(2):
+            response = self.client.post(
+                '/api/requests/', data=payload, content_type='application/json',
+                HTTP_IDEMPOTENCY_KEY='metric-idempotency-2026',
+            )
+            self.assertEqual(response.status_code, 200)
+
+        metric = ProductMetric.objects.get(day=timezone.localdate(), event=ProductMetric.Event.REQUEST_CREATED)
+        self.assertEqual(metric.count, 1)
+
+    def test_quote_start_event_increments_only_anonymous_daily_counter(self):
+        response = self.client.post(
+            '/api/product-events/', data=json.dumps({'event': 'quote_started'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 204)
+        metric = ProductMetric.objects.get(event=ProductMetric.Event.QUOTE_STARTED)
+        self.assertEqual(metric.count, 1)
+        self.assertEqual({field.name for field in ProductMetric._meta.fields}, {'id', 'day', 'event', 'count'})
+
+    def test_catalog_start_event_is_recorded(self):
+        response = self.client.post(
+            '/api/product-events/', data=json.dumps({'event': 'catalog_started'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(ProductMetric.objects.get(event=ProductMetric.Event.CATALOG_STARTED).count, 1)
+
+    def test_contacts_opened_event_is_recorded(self):
+        response = self.client.post(
+            '/api/product-events/', data=json.dumps({'event': 'contacts_opened'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(ProductMetric.objects.get(event=ProductMetric.Event.CONTACTS_OPENED).count, 1)
+
+    def test_product_event_rejects_personal_or_extra_fields(self):
+        response = self.client.post(
+            '/api/product-events/',
+            data=json.dumps({'event': 'quote_started', 'phone': '+7 999 123-45-67'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(ProductMetric.objects.exists())
+
+    def test_product_event_rejects_oversized_body(self):
+        response = self.client.post(
+            '/api/product-events/',
+            data=' ' * 200 + json.dumps({'event': 'quote_started'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 413)
+        self.assertFalse(ProductMetric.objects.exists())
+
+    def test_product_event_has_its_own_per_source_rate_limit(self):
+        payload = json.dumps({'event': 'quote_started'})
+        for _ in range(20):
+            response = self.client.post(
+                '/api/product-events/', data=payload, content_type='application/json',
+                REMOTE_ADDR='203.0.113.21',
+            )
+            self.assertEqual(response.status_code, 204)
+
+        blocked = self.client.post(
+            '/api/product-events/', data=payload, content_type='application/json',
+            REMOTE_ADDR='203.0.113.21',
+        )
+        self.assertEqual(blocked.status_code, 429)
+        self.assertEqual(blocked['Retry-After'], '3600')
+        self.assertEqual(ProductMetric.objects.get(event=ProductMetric.Event.QUOTE_STARTED).count, 20)
+
+    def test_product_event_rejects_non_json_body(self):
+        response = self.client.post(
+            '/api/product-events/', data=json.dumps({'event': 'quote_started'}),
+            content_type='text/plain',
+        )
+
+        self.assertEqual(response.status_code, 415)
+        self.assertFalse(ProductMetric.objects.exists())
+
+    def test_product_event_requires_csrf_cookie(self):
+        browser = Client(enforce_csrf_checks=True)
+        response = browser.post(
+            '/api/product-events/', data=json.dumps({'event': 'quote_started'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(ProductMetric.objects.exists())
+
+    def test_browser_cannot_forge_request_created_event(self):
+        response = self.client.post(
+            '/api/product-events/', data=json.dumps({'event': 'request_created'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(ProductMetric.objects.exists())
+
+    def test_operator_report_shows_daily_counts_without_client_data(self):
+        ProductMetric.objects.create(day=timezone.localdate(), event=ProductMetric.Event.QUOTE_STARTED, count=2)
+        output = StringIO()
+
+        call_command('report_product_metrics', stdout=output)
+
+        self.assertIn('quote_started,2', output.getvalue())
+        self.assertNotIn('phone', output.getvalue())
 
 
 class ReleaseOperationsTests(SimpleTestCase):

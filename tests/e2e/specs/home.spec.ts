@@ -19,6 +19,43 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
 });
 
+test('начало быстрой формы отправляет только код события без адреса', async ({ page }) => {
+  const events: unknown[] = [];
+  await page.route('**/api/product-events/', async (route) => {
+    events.push(route.request().postDataJSON());
+    await route.continue();
+  });
+
+  const response = page.waitForResponse((item) => item.url().endsWith('/api/product-events/'));
+  await page.locator('#address-input').fill('Личный адрес клиента');
+
+  await expect.poll(() => events).toEqual([{ event: 'quote_started' }]);
+  expect([204, 429]).toContain((await response).status());
+});
+
+test('открытие контактов учитывается без передачи полей формы', async ({ page }) => {
+  const events: unknown[] = [];
+  await page.route('**/api/product-events/', async (route) => {
+    events.push(route.request().postDataJSON());
+    await route.fulfill({ status: 204 });
+  });
+
+  await page.locator('#quote-form').getByRole('button', { name: 'Оставить заявку' }).click();
+
+  await expect.poll(() => events).toEqual([{ event: 'contacts_opened' }]);
+});
+
+test('прокрутка мобильного экрана не закрывает поиск при активном поле', async ({ page }) => {
+  await page.clock.install();
+  const search = page.locator('.select__search');
+  await search.focus();
+  await page.clock.fastForward(600);
+  await page.evaluate(() => window.dispatchEvent(new Event('scroll')));
+
+  await expect(page.locator('.select__menu--search')).toBeVisible();
+  await expect(search).toBeFocused();
+});
+
 test('главная не создаёт горизонтальную прокрутку', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1 })).toContainText('САНТЕХНИК РЯДОМ');
   await expect(page.locator('#quote-form')).toBeVisible();

@@ -26,12 +26,13 @@ from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import Category, CompletionMedia, ExtraWork, PushSubscription, ServiceRequest, SubCategory, WithdrawalRequest, Work
+from .models import Category, CompletionMedia, ExtraWork, ProductMetric, PushSubscription, ServiceRequest, SubCategory, WithdrawalRequest, Work
 from .notifications import enqueue_client_notification
 from .roles import is_master
 from .events import record_request_event
 from .models import ServiceRequestEvent
-from .rate_limits import consume_public_request_attempt
+from .rate_limits import consume_product_event_attempt, consume_public_request_attempt
+from .product_metrics import record_product_metric
 
 
 master_required = user_passes_test(is_master, login_url='/masters/login/')
@@ -224,6 +225,34 @@ def home(request):
 @require_GET
 def categories_api(request):
     return JsonResponse({'categories': _categories_payload()})
+
+
+@require_POST
+def product_event(request):
+    if request.content_type != 'application/json':
+        return HttpResponse(status=415)
+    if len(request.body) > 128:
+        return HttpResponse(status=413)
+    try:
+        data = json.loads(request.body)
+    except (ValueError, AttributeError):
+        return HttpResponse(status=400)
+    if not isinstance(data, dict) or set(data) != {'event'}:
+        return HttpResponse(status=400)
+    event = data['event']
+    if event not in (
+        ProductMetric.Event.QUOTE_STARTED,
+        ProductMetric.Event.CATALOG_STARTED,
+        ProductMetric.Event.CONTACTS_OPENED,
+    ):
+        return HttpResponse(status=400)
+    allowed, retry_after = consume_product_event_attempt(request)
+    if not allowed:
+        response = HttpResponse(status=429)
+        response['Retry-After'] = str(retry_after)
+        return response
+    record_product_metric(event)
+    return HttpResponse(status=204)
 
 
 @require_GET
@@ -1081,6 +1110,8 @@ def create_request(request):
                 service_request.subcategories.set(selected)
             if selected_works:
                 service_request.works.set(selected_works)
+
+            record_product_metric(ProductMetric.Event.REQUEST_CREATED)
 
             record_request_event(
                 service_request,

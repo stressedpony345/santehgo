@@ -33,5 +33,6 @@ urlpatterns = [
     path('masters/profile/password/', views.master_change_password, name='master_change_password'),
     path('api/categories/', views.categories_api, name='categories_api'),
     path('api/address-suggestions/', views.address_suggestions, name='address_suggestions'),
+    path('api/product-events/', views.product_event, name='product_event'),
     path('api/requests/', views.create_request, name='create_request'),
 ]

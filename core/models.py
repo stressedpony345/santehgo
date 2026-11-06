@@ -368,3 +368,20 @@ class PublicRequestRateBucket(models.Model):
             ),
         ]
         indexes = [models.Index(fields=('window_started_at',))]
+
+
+class ProductMetric(models.Model):
+    class Event(models.TextChoices):
+        QUOTE_STARTED = 'quote_started', 'Быстрая форма начата'
+        CATALOG_STARTED = 'catalog_started', 'Каталог открыт'
+        CONTACTS_OPENED = 'contacts_opened', 'Контакты открыты'
+        REQUEST_CREATED = 'request_created', 'Заявка создана'
+
+    day = models.DateField()
+    event = models.CharField(max_length=24, choices=Event.choices)
+    count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=('day', 'event'), name='unique_product_metric_day_event'),
+        ]

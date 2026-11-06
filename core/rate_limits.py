@@ -10,13 +10,11 @@ from django.utils import timezone
 from .models import PublicRequestRateBucket
 
 
-def consume_public_request_attempt(request):
-    limit = max(1, int(settings.PUBLIC_REQUEST_RATE_LIMIT))
-    window_seconds = max(1, int(settings.PUBLIC_REQUEST_RATE_WINDOW_SECONDS))
+def _consume_attempt(request, limit, window_seconds, source_prefix=''):
     source = request.META.get(settings.PUBLIC_CLIENT_IP_HEADER, '') or request.META.get('REMOTE_ADDR', '')
     fingerprint = hmac.new(
         settings.SECRET_KEY.encode(),
-        source.encode(),
+        f'{source_prefix}{source}'.encode(),
         hashlib.sha256,
     ).hexdigest()
     now = timezone.now()
@@ -33,3 +31,15 @@ def consume_public_request_attempt(request):
         )
 
     return consumed == 1, window_seconds
+
+
+def consume_public_request_attempt(request):
+    return _consume_attempt(
+        request,
+        max(1, int(settings.PUBLIC_REQUEST_RATE_LIMIT)),
+        max(1, int(settings.PUBLIC_REQUEST_RATE_WINDOW_SECONDS)),
+    )
+
+
+def consume_product_event_attempt(request):
+    return _consume_attempt(request, 20, 3600, 'product-event:')

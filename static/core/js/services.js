@@ -782,6 +782,10 @@
 
   window.addEventListener('scroll', (event) => {
     if (!activeFloatingOverlay || isFloatingOverlayTarget(activeFloatingOverlay, event.target)) return;
+    if (activeFloatingOverlay.invoker === document.activeElement) {
+      window.requestAnimationFrame(() => activeFloatingOverlay?.position());
+      return;
+    }
     if (Date.now() - activeFloatingOverlay.openedAt < floatingOverlayGracePeriod) {
       window.requestAnimationFrame(() => activeFloatingOverlay?.position());
       return;
@@ -867,6 +871,22 @@
     const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
     return match ? decodeURIComponent(match[1]) : '';
   }
+
+  const sentProductEvents = new Set();
+  function reportProductEvent(event) {
+    if (sentProductEvents.has(event)) return;
+    sentProductEvents.add(event);
+    fetch('/api/product-events/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+      body: JSON.stringify({ event }),
+      keepalive: true,
+    }).catch(() => {});
+  }
+
+  quoteForm?.addEventListener('focusin', (event) => {
+    if (event.target.matches?.('input, textarea, select')) reportProductEvent('quote_started');
+  });
 
   const imageByCategory = {
     'Кухня': 'icon-service.svg',
@@ -983,6 +1003,7 @@
       button.classList.toggle('is-active', String(category.id) === activeCategoryId);
       button.setAttribute('aria-pressed', String(String(category.id) === activeCategoryId));
       button.addEventListener('click', () => {
+        reportProductEvent('catalog_started');
         searchInput.value = '';
         activeCategoryId = String(category.id);
         categoryNav.querySelectorAll('.category-nav__item').forEach((item) => {
@@ -1139,6 +1160,7 @@
 
   function openModal(modal, invoker = document.activeElement) {
     if (!modal) return;
+    if (modal === modalContacts) reportProductEvent('contacts_opened');
     if (activeFloatingOverlay) closeFloatingOverlay(activeFloatingOverlay);
     modal._returnFocus = invoker instanceof HTMLElement ? invoker : null;
     modal.hidden = false;
@@ -1170,6 +1192,7 @@
   }
 
   function openServicesModal(service, invoker) {
+    reportProductEvent('catalog_started');
     activeService = service;
     modalWorkIds = new Set(
       service.works
@@ -1223,6 +1246,7 @@
   }
 
   searchInput.addEventListener('input', () => {
+    reportProductEvent('catalog_started');
     if (searchInput.value.trim() && activeCategoryId !== 'all') {
       activeCategoryId = 'all';
       categoryNav?.querySelectorAll('.category-nav__item').forEach((item) => {

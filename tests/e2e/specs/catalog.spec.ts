@@ -5,6 +5,58 @@ test.beforeEach(async ({ page }) => {
   await page.locator('#content').scrollIntoViewIfNeeded();
 });
 
+test('выбор категории отправляет только обезличенный код начала каталога', async ({ page }) => {
+  const events: unknown[] = [];
+  await page.route('**/api/product-events/', async (route) => {
+    events.push(route.request().postDataJSON());
+    await route.fulfill({ status: 204 });
+  });
+
+  await page.getByRole('button', { name: 'Кухня', exact: true }).click();
+
+  await expect.poll(() => events).toEqual([{ event: 'catalog_started' }]);
+});
+
+test('поиск в каталоге отправляет одно событие без поискового текста', async ({ page }) => {
+  const events: unknown[] = [];
+  await page.route('**/api/product-events/', async (route) => {
+    events.push(route.request().postDataJSON());
+    await route.fulfill({ status: 204 });
+  });
+
+  await page.getByRole('searchbox', { name: 'Что нужно сделать?' }).fill('личная проблема клиента');
+
+  await expect.poll(() => events).toEqual([{ event: 'catalog_started' }]);
+});
+
+test('выбор работы без фильтра тоже учитывает начало каталога', async ({ page }) => {
+  const events: unknown[] = [];
+  await page.route('**/api/product-events/', async (route) => {
+    events.push(route.request().postDataJSON());
+    await route.fulfill({ status: 204 });
+  });
+
+  await page.locator('.service-card').first().getByRole('button', { name: 'Выбрать работы' }).click();
+
+  await expect.poll(() => events).toEqual([{ event: 'catalog_started' }]);
+});
+
+test('контакты из каталога учитываются один раз без состава заявки', async ({ page }) => {
+  const events: unknown[] = [];
+  await page.route('**/api/product-events/', async (route) => {
+    events.push(route.request().postDataJSON());
+    await route.fulfill({ status: 204 });
+  });
+
+  await page.locator('.service-card').first().getByRole('button', { name: 'Выбрать работы' }).click();
+  const worksDialog = page.getByRole('dialog').filter({ has: page.locator('#services-form') });
+  await worksDialog.getByRole('checkbox').first().check();
+  await worksDialog.getByRole('button', { name: 'Сохранить выбор' }).click();
+  await page.locator('#work-list').getByRole('button', { name: 'Оставить заявку' }).click();
+
+  await expect.poll(() => events).toEqual([{ event: 'catalog_started' }, { event: 'contacts_opened' }]);
+});
+
 test('поиск сбрасывает выбранную категорию, чтобы фильтры не противоречили результатам', async ({ page }) => {
   const category = page.getByRole('button', { name: 'Кухня', exact: true });
   await category.click();
