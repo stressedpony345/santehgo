@@ -163,8 +163,8 @@ Playwright-проверки проходят на desktop и mobile Chromium; н
 - [x] Серверная валидация всех размеров, форматов и допустимых переходов состояния: поля заявки сверяются с model limits, неизвестные и частичные ID отклоняются, формат телефона проверяется, фото ограничены по весу, формату и пикселям, а переходы ролей/статусов покрыты endpoint- и admin-тестами; принято 06.11.2026, 67 server tests green.
 - [x] Безопасные production secrets, hosts, cookies и proxy-настройки: production-mode включает HTTPS redirect, secure cookies и HSTS, proxy header доверяется только в production, wildcard hosts/слабые secrets/default DB password блокируют deploy, Compose требует явные hosts и DB password, entrypoint запускает `check --deploy`; принято 06.11.2026.
 - [x] Надёжная очередь/таблица уведомлений с атомарным захватом, повторными попытками и dead-letter; фактическая доставка остаётся блокером этапа 1 до подключения провайдера.
-- [ ] Автоматические резервные копии PostgreSQL и media.
-- [ ] Документированный и проверенный restore drill.
+- [~] Автоматические резервные копии PostgreSQL и media: атомарный one-shot backup, SHA-256, retention, pre-deploy backup, systemd timer и off-host sync реализованы; ожидается реальный CI/server run.
+- [~] Документированный и проверенный restore drill: изолированная временная БД, проверка dump/media/миграций/файлов и CI job реализованы; ожидается зелёный drill и замер RPO/RTO.
 - [ ] Централизованные ошибки, health monitoring и оповещение владельца.
 - [ ] Контроль диска, сертификата и контейнеров.
 - [ ] Проверенный сценарий отката релиза.

@@ -61,3 +61,37 @@ docker-compose exec web python manage.py createsuperuser
 Сценарий отправляет на сервер только код и статические файлы, пересобирает
 контейнер Django и применяет новые миграции. PostgreSQL, заявки и изображения,
 загруженные через админку, при этом не перезаписываются.
+
+## Резервные копии и restore drill
+
+Копия включает PostgreSQL и `media_files`, но не воспроизводимую статику. Архив
+публикуется как `complete-*` только после проверки dump, tar и SHA-256.
+Незавершённая попытка не удаляет прежние копии.
+
+```bash
+docker compose --profile ops run --rm backup /scripts/backup.sh
+docker compose --profile ops run --rm backup /scripts/restore-drill.sh latest
+```
+
+Restore drill создаёт отдельную временную БД, восстанавливает dump, сверяет миграции
+и ссылки на media, затем удаляет только эту БД. `restore_drill=ok` фиксируется ежемесячно
+и после изменения backup-скриптов.
+
+Для автозапуска скопируйте `ops/systemd/santehgo-backup.service` и `.timer` в
+`/etc/systemd/system/`. Файл `/etc/santehgo-backup.env`:
+
+```text
+BACKUP_ROOT=/var/backups/santehgo
+OFFSITE_BACKUP_TARGET=backup-user@backup-host:/srv/santehgo
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now santehgo-backup.timer
+sudo systemctl start santehgo-backup.service
+systemctl list-timers santehgo-backup.timer
+journalctl -u santehgo-backup.service
+```
+
+Копия только на том же VPS не защищает от потери сервера. Успешная off-host синхронизация
+через `OFFSITE_BACKUP_TARGET` обязательна для production-приёмки.

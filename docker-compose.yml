@@ -91,6 +91,29 @@ services:
     volumes:
       - django_data:/app/data
 
+  backup:
+    image: postgres:17-alpine
+    profiles: ["ops"]
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: "${POSTGRES_DB:-santehgo}"
+      PGUSER: "${POSTGRES_USER:-santehgo}"
+      PGPASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+      BACKUP_ROOT: /backups
+      MEDIA_SOURCE: /source/media
+      BACKUP_RETENTION_COUNT: "${BACKUP_RETENTION_COUNT:-14}"
+      RELEASE_SHA: "${RELEASE_SHA:-unknown}"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - media_files:/source/media:ro
+      - "${BACKUP_DIR:-./backups}:/backups"
+      - ./docker:/scripts:ro
+    entrypoint: ["/bin/sh"]
+    command: ["/scripts/backup.sh"]
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped

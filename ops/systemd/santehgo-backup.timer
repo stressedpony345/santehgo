@@ -1,0 +1,11 @@
+[Unit]
+Description=Run SantehGo backup every day
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=santehgo-backup.service
+
+[Install]
+WantedBy=timers.target
