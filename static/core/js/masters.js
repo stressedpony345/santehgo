@@ -1,13 +1,17 @@
 (() => {
   const demoFinanceEnabled = document.body.dataset.demoFinance === 'true';
-  const state = { available: [], mine: [], mineFilter: 'active', latestId: 0, initialized: false };
+  const state = { available: [], availableQuery: '', mine: [], mineFilter: 'active', latestId: 0, initialized: false };
   const availableList = document.getElementById('available-list');
   const mineList = document.getElementById('mine-list');
   const dialog = document.getElementById('request-dialog');
   const dialogContent = document.getElementById('dialog-content');
   const completionDialog = document.getElementById('completion-dialog');
   const completionForm = document.getElementById('completion-form');
+  const completionFiles = document.getElementById('completion-files');
+  const completionProgress = document.getElementById('completion-progress');
+  const completionStatus = document.getElementById('completion-status');
   const toast = document.getElementById('app-toast');
+  const reportDraft = { requestId: null, photos: [], videos: [] };
 
   const csrf = () => document.cookie.match(/(?:^|; )csrftoken=([^;]+)/)?.[1] || '';
   const money = (value) => new Intl.NumberFormat('ru-RU').format(value || 0) + ' ₽';
@@ -71,7 +75,10 @@
   }
 
   function render() {
-    availableList.replaceChildren(...state.available.map((item) => card(item)));
+    const query = state.availableQuery.toLocaleLowerCase('ru-RU');
+    const available = state.available.filter((item) => !query || [item.id, item.issue, item.preferred_time, workNames(item)]
+      .some((value) => String(value || '').toLocaleLowerCase('ru-RU').includes(query)));
+    availableList.replaceChildren(...available.map((item) => card(item)));
     const visible = state.mine.filter((item) => stage(item) === state.mineFilter);
     mineList.replaceChildren(...visible.map((item) => card(item, true)));
     document.querySelectorAll('[data-filter-count]').forEach((count) => {
@@ -81,7 +88,7 @@
     document.getElementById('mine-count').textContent = state.mine.length;
     document.getElementById('nav-badge').textContent = state.available.length;
     document.getElementById('nav-badge').hidden = !state.available.length;
-    document.getElementById('available-empty').hidden = Boolean(state.available.length);
+    document.getElementById('available-empty').hidden = Boolean(available.length);
     document.getElementById('mine-empty').hidden = Boolean(visible.length);
   }
 
@@ -163,34 +170,96 @@
     return data;
   }
 
-  async function submitCompletion(id, form) {
-    const response = await fetch(`/masters/api/requests/${id}/complete/`, {
-      method: 'POST',
-      headers: { 'X-CSRFToken': decodeURIComponent(csrf()) },
-      body: form,
-    });
-    const data = (response.headers.get('content-type') || '').includes('application/json')
-      ? await response.json()
-      : { ok: false, error: 'Сервер временно не может принять фото' };
-    if (!response.ok) throw new Error(data.error || 'Не удалось отправить фото');
-    return data;
+  const reportStorageKey = (id) => `santehgo:completion-draft:${id}`;
+
+  function persistReportComment() {
+    if (!reportDraft.requestId) return;
+    try { localStorage.setItem(reportStorageKey(reportDraft.requestId), completionForm.elements.comment.value); }
+    catch (_) { /* The in-memory draft still survives closing the dialog. */ }
   }
+
+  function renderCompletionFiles() {
+    const rows = [...reportDraft.photos.map((file, index) => ({ file, kind: 'photos', index })),
+      ...reportDraft.videos.map((file, index) => ({ file, kind: 'videos', index }))];
+    completionFiles.innerHTML = rows.map(({ file, kind, index }) => `
+      <div class="completion-file">
+        <span><strong>${escapeHtml(file.name)}</strong><small>${(file.size / 1024 / 1024).toFixed(1)} МБ</small></span>
+        <button type="button" data-remove-file="${kind}:${index}" aria-label="Удалить ${escapeHtml(file.name)}">Удалить</button>
+      </div>`).join('');
+  }
+
+  function submitCompletion(id, formData) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `/masters/api/requests/${id}/complete/`);
+      xhr.setRequestHeader('X-CSRFToken', decodeURIComponent(csrf()));
+      xhr.upload.addEventListener('progress', (event) => {
+        if (!event.lengthComputable) return;
+        const value = Math.round(event.loaded / event.total * 100);
+        completionProgress.value = value;
+        completionStatus.textContent = `Отправка: ${value}%`;
+      });
+      xhr.addEventListener('load', () => {
+        let data = { ok: false, error: 'Сервер временно не может принять отчёт' };
+        try { data = JSON.parse(xhr.responseText); } catch (_) { /* use safe fallback */ }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+        else reject(new Error(data.error || 'Не удалось отправить отчёт'));
+      });
+      xhr.addEventListener('error', () => reject(new Error('Сеть недоступна. Черновик сохранён — попробуйте ещё раз.')));
+      xhr.addEventListener('abort', () => reject(new Error('Отправка отменена. Черновик сохранён.')));
+      xhr.send(formData);
+    });
+  }
+
+  completionForm.elements.photos.addEventListener('change', (event) => {
+    reportDraft.photos = [...event.target.files];
+    renderCompletionFiles();
+  });
+  completionForm.elements.videos.addEventListener('change', (event) => {
+    reportDraft.videos = [...event.target.files];
+    renderCompletionFiles();
+  });
+  completionForm.elements.comment.addEventListener('input', persistReportComment);
+  completionFiles.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-remove-file]');
+    if (!button) return;
+    const [kind, index] = button.dataset.removeFile.split(':');
+    reportDraft[kind].splice(Number(index), 1);
+    completionForm.elements[kind].value = '';
+    renderCompletionFiles();
+  });
+  document.getElementById('available-search').addEventListener('input', (event) => {
+    state.availableQuery = event.target.value.trim();
+    render();
+  });
 
   completionForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!window.confirm('Отправить отчёт модератору? После отправки состав работ нельзя будет менять.')) return;
     const button = completionForm.querySelector('[type=submit]');
-    const photos = completionForm.elements.photos.files;
-    const videos = completionForm.elements.videos.files;
+    const photos = reportDraft.photos;
+    const videos = reportDraft.videos;
     if (photos.length < 1 || photos.length > 6 || videos.length > 2 || [...photos].some((file) => file.size > 10 * 1024 * 1024) || [...videos].some((file) => file.size > 50 * 1024 * 1024) || [...photos, ...videos].reduce((sum, file) => sum + file.size, 0) > 120 * 1024 * 1024) {
       showToast('Проверьте количество и размеры файлов'); return;
     }
     button.disabled = true;
+    completionProgress.value = 0;
+    completionStatus.textContent = 'Подготавливаем отчёт к отправке…';
     try {
-      await submitCompletion(completionForm.dataset.requestId, new FormData(completionForm));
+      const formData = new FormData();
+      photos.forEach((file) => formData.append('photos', file));
+      videos.forEach((file) => formData.append('videos', file));
+      formData.append('comment', completionForm.elements.comment.value);
+      await submitCompletion(completionForm.dataset.requestId, formData);
+      try { localStorage.removeItem(reportStorageKey(completionForm.dataset.requestId)); } catch (_) {}
+      reportDraft.photos = [];
+      reportDraft.videos = [];
+      completionForm.reset();
+      renderCompletionFiles();
       completionDialog.close();
       showToast('Работа отправлена модератору');
       await loadRequests();
-    } catch (error) { showToast(error.message); }
+    } catch (error) { completionStatus.textContent = error.message; showToast(error.message); }
     finally { button.disabled = false; }
   });
   document.querySelector('[data-close-completion]').addEventListener('click', () => completionDialog.close());
@@ -242,6 +311,7 @@
     if (details) return openDetails(findRequest(details.dataset.details));
     const claim = event.target.closest('[data-claim]');
     if (claim) {
+      if (!window.confirm('Взять эту заявку? После подтверждения откроются контакты клиента, а заявка появится в разделе «Мои».')) return;
       claim.disabled = true;
       try { await post(`/masters/api/requests/${claim.dataset.claim}/claim/`); showToast('Заявка добавлена в «Мои»'); await loadRequests(); }
       catch (error) { showToast(error.message); await loadRequests(); }
@@ -249,6 +319,7 @@
     }
     const start = event.target.closest('[data-start]');
     if (start) {
+      if (!window.confirm('Начать работу по этой заявке? После начала клиент уже не сможет отменить её через сайт.')) return;
       start.disabled = true;
       try { await post(`/masters/api/requests/${start.dataset.start}/start/`); await loadRequests(); if (dialog.open) openDetails(findRequest(start.dataset.start)); showToast('Заявка в работе'); }
       catch (error) { showToast(error.message); start.disabled = false; }
@@ -257,8 +328,18 @@
     const complete = event.target.closest('[data-complete]');
     if (complete && !complete.disabled) {
       if (dialog.open) dialog.close();
-      completionForm.reset();
+      if (reportDraft.requestId !== complete.dataset.complete) {
+        reportDraft.requestId = complete.dataset.complete;
+        reportDraft.photos = [];
+        reportDraft.videos = [];
+        completionForm.reset();
+        try { completionForm.elements.comment.value = localStorage.getItem(reportStorageKey(reportDraft.requestId)) || ''; }
+        catch (_) { completionForm.elements.comment.value = ''; }
+        renderCompletionFiles();
+      }
       completionForm.dataset.requestId = complete.dataset.complete;
+      completionProgress.value = 0;
+      completionStatus.textContent = 'Черновик сохраняется до успешной отправки.';
       completionDialog.showModal();
       return;
     }

@@ -27,6 +27,7 @@
         <div><p class="view-kicker">Общая очередь</p><h1>Новые заявки <span id="available-count">0</span></h1></div>
         <button class="notify-button" id="notify-button" type="button" aria-label="Включить уведомления"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></button>
       </div>
+      <label class="queue-search"><span>Поиск по общей очереди</span><input id="available-search" type="search" placeholder="Номер, работа или удобное время" autocomplete="off"></label>
       <div class="request-list" id="available-list"></div>
       <div class="empty-state" id="available-empty" hidden><span>✓</span><strong>Все заявки разобраны</strong><small>Новые обращения появятся здесь автоматически</small></div>
     </section>
@@ -88,16 +89,19 @@
       <div id="dialog-content"></div>
     </div>
   </dialog>
-  <dialog class="request-dialog" id="completion-dialog">
+  <dialog class="request-dialog" id="completion-dialog" aria-labelledby="completion-dialog-title">
     <div class="dialog-sheet">
       <button class="dialog-close" type="button" data-close-completion aria-label="Закрыть">×</button>
-      <h2>Отправить работу на проверку</h2>
+      <h2 id="completion-dialog-title">Отправить работу на проверку</h2>
       <p class="income-hint">Добавьте фото результата (обязательно), при необходимости видео и комментарий модератору. После отправки состав работ менять нельзя.</p>
       <form id="completion-form">
         <label>Фото результата — от 1 до 6<input type="file" name="photos" accept="image/jpeg,image/png,image/webp" multiple required></label>
         <label>Видео — до 2 файлов MP4 или WebM<input type="file" name="videos" accept="video/mp4,video/webm" multiple></label>
+        <div class="completion-files" id="completion-files" aria-live="polite"></div>
         <label>Комментарий модератору<textarea name="comment" maxlength="2000" rows="4" placeholder="Что выполнено, на что обратить внимание"></textarea></label>
         <p class="income-hint">До 10 МБ на фото, до 50 МБ на видео, всего до 120 МБ.</p>
+        <progress id="completion-progress" max="100" value="0" aria-label="Прогресс отправки"></progress>
+        <p class="completion-status" id="completion-status" aria-live="polite">Черновик сохраняется до успешной отправки.</p>
         <button type="submit">Отправить на проверку</button>
       </form>
     </div>

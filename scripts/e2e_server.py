@@ -42,6 +42,49 @@ call_command(
     verbosity=1,
 )
 
+from django.contrib.auth import get_user_model  # noqa: E402
+from django.contrib.auth.models import Group  # noqa: E402
+from django.utils import timezone  # noqa: E402
+from core.models import ServiceRequest  # noqa: E402
+
+master_group, _ = Group.objects.get_or_create(name='masters')
+master, _ = get_user_model().objects.get_or_create(
+    username='e2e-master',
+    defaults={'is_active': True, 'is_staff': True},
+)
+master.set_password('E2e-master-pass-2026')
+master.is_active = True
+master.is_staff = True
+master.save()
+master.groups.add(master_group)
+if not ServiceRequest.objects.filter(phone='+79000000011').exists():
+    ServiceRequest.objects.create(
+        full_name='Клиент из общей очереди',
+        phone='+79000000011',
+        issue='Течёт смеситель на кухне',
+        address='г. Челябинск, ул. Тестовая, 11',
+        preferred_time='Сегодня после 18:00',
+    )
+if not ServiceRequest.objects.filter(phone='+79000000013').exists():
+    ServiceRequest.objects.create(
+        full_name='Второй клиент очереди',
+        phone='+79000000013',
+        issue='Установить стиральную машину',
+        address='г. Челябинск, ул. Тестовая, 13',
+        preferred_time='В выходные',
+    )
+if not ServiceRequest.objects.filter(phone='+79000000012').exists():
+    ServiceRequest.objects.create(
+        full_name='Клиент в работе',
+        phone='+79000000012',
+        issue='Заменить сифон',
+        address='г. Челябинск, ул. Тестовая, 12',
+        preferred_time='Завтра утром',
+        assigned_to=master,
+        assigned_at=timezone.now(),
+        work_started_at=timezone.now(),
+    )
+
 execute_from_command_line(
     ["manage.py", "runserver", "127.0.0.1:8000", "--noreload"]
 )
