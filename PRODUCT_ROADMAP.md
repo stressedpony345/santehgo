@@ -161,7 +161,7 @@ Playwright-проверки проходят на desktop и mobile Chromium; н
 
 - [x] Rate limit и защита формы от автоматического спама: DB-backed лимит по HMAC-отпечатку IP, `Retry-After`, honeypot и безопасный idempotent retry; принято 06.11.2026.
 - [x] Серверная валидация всех размеров, форматов и допустимых переходов состояния: поля заявки сверяются с model limits, неизвестные и частичные ID отклоняются, формат телефона проверяется, фото ограничены по весу, формату и пикселям, а переходы ролей/статусов покрыты endpoint- и admin-тестами; принято 06.11.2026, 67 server tests green.
-- [ ] Безопасные production secrets, hosts, cookies и proxy-настройки.
+- [x] Безопасные production secrets, hosts, cookies и proxy-настройки: production-mode включает HTTPS redirect, secure cookies и HSTS, proxy header доверяется только в production, wildcard hosts/слабые secrets/default DB password блокируют deploy, Compose требует явные hosts и DB password, entrypoint запускает `check --deploy`; принято 06.11.2026.
 - [x] Надёжная очередь/таблица уведомлений с атомарным захватом, повторными попытками и dead-letter; фактическая доставка остаётся блокером этапа 1 до подключения провайдера.
 - [ ] Автоматические резервные копии PostgreSQL и media.
 - [ ] Документированный и проверенный restore drill.

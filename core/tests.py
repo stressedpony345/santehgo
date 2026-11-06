@@ -84,6 +84,77 @@ class MultiServiceRequestTests(TestCase):
 
         self.assertEqual({error.id for error in errors}, {'core.E001', 'core.E002', 'core.E003'})
 
+    @override_settings(PRODUCTION_MODE=True, DEBUG=True)
+    def test_production_configuration_rejects_debug_mode(self):
+        from .checks import check_production_security
+
+        errors = check_production_security(None)
+
+        self.assertIn('core.E020', {error.id for error in errors})
+
+    @override_settings(PRODUCTION_MODE=True, DEBUG=False, ALLOWED_HOSTS=['*'])
+    def test_production_configuration_rejects_wildcard_hosts(self):
+        from .checks import check_production_security
+
+        errors = check_production_security(None)
+
+        self.assertIn('core.E021', {error.id for error in errors})
+
+    @override_settings(
+        PRODUCTION_MODE=True,
+        DEBUG=False,
+        ALLOWED_HOSTS=['example.test'],
+        SESSION_COOKIE_SECURE=False,
+        CSRF_COOKIE_SECURE=False,
+        SECURE_SSL_REDIRECT=False,
+        SECURE_PROXY_SSL_HEADER=None,
+    )
+    def test_production_configuration_requires_secure_https_transport(self):
+        from .checks import check_production_security
+
+        error_ids = {error.id for error in check_production_security(None)}
+
+        self.assertTrue({'core.E022', 'core.E023', 'core.E024', 'core.E025'} <= error_ids)
+
+    @override_settings(
+        PRODUCTION_MODE=True,
+        DEBUG=False,
+        ALLOWED_HOSTS=['example.test'],
+        SECRET_KEY='django-insecure-test-key',
+    )
+    def test_production_configuration_rejects_insecure_secret_key(self):
+        from .checks import check_production_security
+
+        error_ids = {error.id for error in check_production_security(None)}
+
+        self.assertIn('core.E026', error_ids)
+
+    @override_settings(
+        PRODUCTION_MODE=True,
+        DEBUG=False,
+        ALLOWED_HOSTS=['example.test'],
+        SECRET_KEY='x' * 64,
+    )
+    def test_production_configuration_rejects_low_entropy_secret_key(self):
+        from .checks import check_production_security
+
+        error_ids = {error.id for error in check_production_security(None)}
+
+        self.assertIn('core.E026', error_ids)
+
+    @override_settings(
+        PRODUCTION_MODE=True,
+        DEBUG=False,
+        ALLOWED_HOSTS=['example.test'],
+        DATABASES={'default': {'ENGINE': 'django.db.backends.postgresql', 'PASSWORD': 'change-this-password'}},
+    )
+    def test_production_configuration_rejects_default_database_password(self):
+        from .checks import check_production_security
+
+        error_ids = {error.id for error in check_production_security(None)}
+
+        self.assertIn('core.E027', error_ids)
+
     def test_request_accepts_multiple_services(self):
         response = self.client.post(
             '/api/requests/',

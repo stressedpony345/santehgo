@@ -17,6 +17,7 @@ if [ -z "${DJANGO_SECRET_KEY:-}" ]; then
     export DJANGO_SECRET_KEY
 fi
 
+python manage.py check --deploy
 python manage.py migrate --noinput
 
 if [ -f /app/deploy-data.json ]; then

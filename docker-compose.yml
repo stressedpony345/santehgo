@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: "${POSTGRES_DB:-santehgo}"
       POSTGRES_USER: "${POSTGRES_USER:-santehgo}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-change-this-password}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,7 +19,8 @@ services:
     restart: unless-stopped
     environment:
       DJANGO_DEBUG: "false"
-      DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:-*}"
+      DJANGO_PRODUCTION: "true"
+      DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS in .env}"
       DJANGO_CSRF_TRUSTED_ORIGINS: "${DJANGO_CSRF_TRUSTED_ORIGINS:-}"
       DJANGO_MEDIA_ROOT: /app/media
       GUNICORN_WORKERS: "${GUNICORN_WORKERS:-2}"
@@ -27,7 +28,7 @@ services:
       POSTGRES_PORT: "5432"
       POSTGRES_DB: "${POSTGRES_DB:-santehgo}"
       POSTGRES_USER: "${POSTGRES_USER:-santehgo}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-change-this-password}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
       DADATA_API_TOKEN: "${DADATA_API_TOKEN:-}"
       LEGAL_OPERATOR_NAME: "${LEGAL_OPERATOR_NAME:-}"
       LEGAL_OPERATOR_TAX_ID: "${LEGAL_OPERATOR_TAX_ID:-}"
@@ -68,11 +69,12 @@ services:
     command: ["sh", "-c", "while true; do python manage.py send_client_notifications --limit 50; sleep 30; done"]
     environment:
       DJANGO_DEBUG: "false"
+      DJANGO_PRODUCTION: "true"
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       POSTGRES_DB: "${POSTGRES_DB:-santehgo}"
       POSTGRES_USER: "${POSTGRES_USER:-santehgo}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-change-this-password}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
       LEGAL_OPERATOR_NAME: "${LEGAL_OPERATOR_NAME:-}"
       PERSONAL_DATA_CONSENT_VERSION: "${PERSONAL_DATA_CONSENT_VERSION:-2026-11-05}"
       PERSONAL_DATA_CONSENT_EFFECTIVE_DATE: "${PERSONAL_DATA_CONSENT_EFFECTIVE_DATE:-}"
