@@ -110,3 +110,24 @@ journalctl -u santehgo-backup.service
 ```bash
 docker compose exec -T web python manage.py send_test_alert
 ```
+
+Для host-level контроля скопируйте `ops/systemd/santehgo-monitor.service` и `.timer`
+в `/etc/systemd/system/`. Пример `/etc/santehgo-monitor.env`:
+
+```text
+ERROR_ALERT_WEBHOOK_URL=https://alerts.example/api/events
+ERROR_ALERT_TOKEN=replace-with-secret
+MONITOR_DISK_PERCENT=85
+MONITOR_CERT_DAYS=14
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now santehgo-monitor.timer
+sudo systemctl start santehgo-monitor.service
+systemctl list-timers santehgo-monitor.timer
+journalctl -u santehgo-monitor.service
+```
+
+Тест тревоги: временно укажите `MONITOR_DISK_PERCENT=0`, запустите service,
+убедитесь, что сигнал получен, и верните порог `85`.

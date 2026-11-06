@@ -166,7 +166,7 @@ Playwright-проверки проходят на desktop и mobile Chromium; н
 - [~] Автоматические резервные копии PostgreSQL и media: атомарный one-shot backup, SHA-256, retention, pre-deploy backup, systemd timer и off-host sync реализованы; ожидается реальный CI/server run.
 - [~] Документированный и проверенный restore drill: изолированная временная БД, проверка dump/media/миграций/файлов и CI job реализованы; ожидается зелёный drill и замер RPO/RTO.
 - [~] Централизованные ошибки, health monitoring и оповещение владельца: readiness проверяет DB и media, ERROR-логи уходят в аутентифицированный webhook, есть `send_test_alert`; ожидается реальный канал и доставленная тесовая тревога.
-- [ ] Контроль диска, сертификата и контейнеров.
+- [~] Контроль диска, сертификата и контейнеров: host timer проверяет disk threshold, TLS expiry, readiness и состояние db/web/notifications/nginx, а при сбое шлёт webhook; ожидается server install и тестовая тревога.
 - [ ] Проверенный сценарий отката релиза.
 
 UX для сбоев:

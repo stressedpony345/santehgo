@@ -1,0 +1,10 @@
+[Unit]
+Description=SantehGo disk, certificate, readiness and container monitor
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/santehgo
+EnvironmentFile=/etc/santehgo-monitor.env
+ExecStart=/opt/santehgo/ops/monitor.sh
