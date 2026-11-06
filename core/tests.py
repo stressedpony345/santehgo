@@ -12,12 +12,74 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core import signing
 from django.db.utils import DatabaseError
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.test import override_settings
 from django.utils import timezone
 from PIL import Image
 
 from .models import Category, ClientNotification, ServiceRequest, ServiceRequestEvent, SubCategory, WithdrawalRequest, Work
+
+
+class ReleaseOperationsTests(SimpleTestCase):
+    def test_backup_service_uses_active_release_and_stable_compose_project(self):
+        unit = (Path(__file__).resolve().parent.parent / 'ops/systemd/santehgo-backup.service').read_text(encoding='utf-8')
+
+        self.assertIn('WorkingDirectory=/opt/santehgo/current', unit)
+        self.assertIn('ExecStartPost=/opt/santehgo/current/docker/offsite-sync.sh', unit)
+        self.assertIn('--project-name santehgo --env-file /opt/santehgo/.env -f /opt/santehgo/current/docker-compose.yml', unit)
+
+    def test_monitor_service_checks_containers_in_active_release_project(self):
+        root = Path(__file__).resolve().parent.parent
+        unit = (root / 'ops/systemd/santehgo-monitor.service').read_text(encoding='utf-8')
+        monitor = (root / 'ops/monitor.sh').read_text(encoding='utf-8')
+
+        self.assertIn('WorkingDirectory=/opt/santehgo/current', unit)
+        self.assertIn('ExecStart=/opt/santehgo/current/ops/monitor.sh', unit)
+        self.assertIn('SANTEHGO_PROJECT_DIR:-/opt/santehgo/current', monitor)
+        self.assertIn('docker compose --project-name santehgo --env-file "$deploy_env" -f "$project_dir/docker-compose.yml" ps -q', monitor)
+
+    def test_activation_checks_public_readiness_before_committing_release(self):
+        script = (Path(__file__).resolve().parent.parent / 'ops/activate-release.sh').read_text(encoding='utf-8')
+
+        self.assertIn('curl --fail', script)
+        probe_position = script.index('curl --fail')
+        self.assertLess(probe_position, script.index('ln -sfn "$release_dir" "$current_link"'))
+        self.assertLess(probe_position, script.index('trap - EXIT HUP INT TERM'))
+
+    def test_backup_uses_process_scoped_lock_instead_of_permanent_directory(self):
+        script = (Path(__file__).resolve().parent.parent / 'docker/backup.sh').read_text(encoding='utf-8')
+
+        self.assertIn('flock -n 9', script)
+        self.assertNotIn('mkdir "$lock_dir"', script)
+
+    def test_backup_container_installs_flock(self):
+        root = Path(__file__).resolve().parent.parent
+        compose = (root / 'docker-compose.yml').read_text(encoding='utf-8')
+        backup = compose.split('  backup:', 1)[1].split('  nginx:', 1)[0]
+
+        self.assertIn('dockerfile: docker/backup.Dockerfile', backup)
+        self.assertIn('util-linux', (root / 'docker/backup.Dockerfile').read_text(encoding='utf-8'))
+
+    def test_activation_builds_backup_image_before_predeploy_dump(self):
+        script = (Path(__file__).resolve().parent.parent / 'ops/activate-release.sh').read_text(encoding='utf-8')
+
+        self.assertIn('compose "$release_dir" build backup', script)
+        self.assertLess(
+            script.index('compose "$release_dir" build backup'),
+            script.index('compose "$backup_source" --profile ops run --rm backup'),
+        )
+
+    def test_ci_builds_backup_image_for_restore_drill(self):
+        workflow = (Path(__file__).resolve().parent.parent / '.github/workflows/ci.yml').read_text(encoding='utf-8')
+
+        self.assertIn('docker compose build web backup', workflow)
+
+    def test_ci_verifies_backup_can_restart_after_process_is_killed(self):
+        workflow = (Path(__file__).resolve().parent.parent / '.github/workflows/ci.yml').read_text(encoding='utf-8')
+
+        crash_position = workflow.index('kill -9 $$') if 'kill -9 $$' in workflow else -1
+        self.assertGreater(crash_position, 0)
+        self.assertLess(crash_position, workflow.index('docker compose --profile ops run --rm backup /scripts/backup.sh'))
 
 
 class MultiServiceRequestTests(TestCase):

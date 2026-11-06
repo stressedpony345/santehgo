@@ -96,7 +96,9 @@ services:
       - django_data:/app/data
 
   backup:
-    image: postgres:17-alpine
+    build:
+      context: .
+      dockerfile: docker/backup.Dockerfile
     profiles: ["ops"]
     environment:
       PGHOST: db

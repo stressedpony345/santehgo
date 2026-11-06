@@ -5,6 +5,6 @@ After=docker.service network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/opt/santehgo
+WorkingDirectory=/opt/santehgo/current
 EnvironmentFile=/etc/santehgo-monitor.env
-ExecStart=/opt/santehgo/ops/monitor.sh
+ExecStart=/opt/santehgo/current/ops/monitor.sh

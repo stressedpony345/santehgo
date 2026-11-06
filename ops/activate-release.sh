@@ -34,6 +34,7 @@ fi
 
 backup_source="$release_dir"
 if [ -n "$old_release" ]; then backup_source="$old_release"; fi
+compose "$release_dir" build backup
 compose "$backup_source" --profile ops run --rm backup /scripts/backup.sh
 compose "$release_dir" build web notifications
 
@@ -50,6 +51,9 @@ trap rollback_on_error EXIT HUP INT TERM
 compose "$release_dir" up -d --remove-orphans
 compose "$release_dir" exec -T web python manage.py check
 compose "$release_dir" exec -T web python manage.py check_master_admin --check-approval
+ready_url="${RELEASE_READY_URL:-https://xn--80agf5ahnjz.xn--p1ai/health/ready/}"
+curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors --max-time 10 \
+    -H 'Cache-Control: no-cache' "$ready_url" >/dev/null
 
 if [ -n "$old_release" ]; then
     ln -sfn "$old_release" "$previous_link"

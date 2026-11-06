@@ -4,7 +4,8 @@ set -eu
 : "${ERROR_ALERT_WEBHOOK_URL:?Set ERROR_ALERT_WEBHOOK_URL}"
 : "${ERROR_ALERT_TOKEN:?Set ERROR_ALERT_TOKEN}"
 
-project_dir="${SANTEHGO_PROJECT_DIR:-/opt/santehgo}"
+project_dir="${SANTEHGO_PROJECT_DIR:-/opt/santehgo/current}"
+deploy_env="${SANTEHGO_ENV_FILE:-/opt/santehgo/.env}"
 disk_path="${MONITOR_DISK_PATH:-/var/lib/docker}"
 disk_limit="${MONITOR_DISK_PERCENT:-85}"
 certificate="${MONITOR_CERT_PATH:-/etc/letsencrypt/live/xn--80agf5ahnjz.xn--p1ai/fullchain.pem}"
@@ -39,7 +40,7 @@ fi
 
 cd "$project_dir"
 for service in $required_services; do
-    container_id="$(docker compose ps -q "$service")"
+    container_id="$(docker compose --project-name santehgo --env-file "$deploy_env" -f "$project_dir/docker-compose.yml" ps -q "$service")"
     if [ -z "$container_id" ]; then
         add_issue "container $service is absent"
         continue

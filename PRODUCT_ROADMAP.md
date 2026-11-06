@@ -163,11 +163,11 @@ Playwright-проверки проходят на desktop и mobile Chromium; н
 - [x] Серверная валидация всех размеров, форматов и допустимых переходов состояния: поля заявки сверяются с model limits, неизвестные и частичные ID отклоняются, формат телефона проверяется, фото ограничены по весу, формату и пикселям, а переходы ролей/статусов покрыты endpoint- и admin-тестами; принято 06.11.2026, 67 server tests green.
 - [x] Безопасные production secrets, hosts, cookies и proxy-настройки: production-mode включает HTTPS redirect, secure cookies и HSTS, proxy header доверяется только в production, wildcard hosts/слабые secrets/default DB password блокируют deploy, Compose требует явные hosts и DB password, entrypoint запускает `check --deploy`; принято 06.11.2026.
 - [x] Надёжная очередь/таблица уведомлений с атомарным захватом, повторными попытками и dead-letter; фактическая доставка остаётся блокером этапа 1 до подключения провайдера.
-- [~] Автоматические резервные копии PostgreSQL и media: атомарный one-shot backup, SHA-256, retention, pre-deploy backup, systemd timer и off-host sync реализованы; ожидается реальный CI/server run.
+- [~] Автоматические резервные копии PostgreSQL и media: атомарный one-shot backup, SHA-256, retention, pre-deploy backup, systemd timer, off-host sync и освобождаемая ОС блокировка реализованы; ожидается реальный CI/server run.
 - [~] Документированный и проверенный restore drill: изолированная временная БД, проверка dump/media/миграций/файлов и CI job реализованы; ожидается зелёный drill и замер RPO/RTO.
-- [~] Централизованные ошибки, health monitoring и оповещение владельца: readiness проверяет DB и media, ERROR-логи уходят в аутентифицированный webhook, есть `send_test_alert`; ожидается реальный канал и доставленная тесовая тревога.
-- [~] Контроль диска, сертификата и контейнеров: host timer проверяет disk threshold, TLS expiry, readiness и состояние db/web/notifications/nginx, а при сбое шлёт webhook; ожидается server install и тестовая тревога.
-- [~] Проверенный сценарий отката релиза: версионные `releases/<sha>`, `current`/`previous`, автовозврат к прежним контейнерам при неудачной активации и `ops/rollback-release.sh` реализованы; ожидается тест на сервере.
+- [~] Централизованные ошибки, health monitoring и оповещение владельца: readiness проверяет DB и media, ERROR-логи уходят в аутентифицированный webhook, есть `send_test_alert`; ожидается реальный канал и доставленная тестовая тревога.
+- [~] Контроль диска, сертификата и контейнеров: host timer теперь следует за `current` и проверяет стабильный Compose-проект, disk threshold, TLS expiry, readiness и состояние db/web/notifications/nginx; ожидается server install и тестовая тревога.
+- [~] Проверенный сценарий отката релиза: версионные `releases/<sha>`, `current`/`previous`, проверка публичной readiness до переключения ссылки, автовозврат к прежним контейнерам при неудачной активации и `ops/rollback-release.sh` реализованы; ожидается тест на сервере.
 
 UX для сбоев:
 

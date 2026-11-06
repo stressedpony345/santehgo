@@ -4,7 +4,7 @@ set -eu
 backup_root="${BACKUP_ROOT:-/backups}"
 media_source="${MEDIA_SOURCE:-/source/media}"
 retention_count="${BACKUP_RETENTION_COUNT:-14}"
-lock_dir="$backup_root/.backup.lock"
+lock_file="$backup_root/.backup.flock"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 temporary_dir="$backup_root/.partial-$timestamp-$$"
 complete_dir="$backup_root/complete-$timestamp"
@@ -17,18 +17,18 @@ if [ "$retention_count" -lt 1 ]; then
     exit 2
 fi
 
+umask 077
 mkdir -p "$backup_root"
-if ! mkdir "$lock_dir" 2>/dev/null; then
+exec 9>"$lock_file"
+if ! flock -n 9; then
     echo "Another backup is already running" >&2
     exit 1
 fi
 cleanup() {
     rm -rf "$temporary_dir"
-    rmdir "$lock_dir" 2>/dev/null || true
 }
 trap cleanup EXIT HUP INT TERM
 
-umask 077
 mkdir "$temporary_dir"
 pg_dump --format=custom --no-owner --no-acl --file="$temporary_dir/database.dump"
 tar -czf "$temporary_dir/media.tar.gz" -C "$media_source" .

@@ -67,6 +67,8 @@ docker-compose exec web python manage.py createsuperuser
 Копия включает PostgreSQL и `media_files`, но не воспроизводимую статику. Архив
 публикуется как `complete-*` только после проверки dump, tar и SHA-256.
 Незавершённая попытка не удаляет прежние копии.
+Backup использует `flock`: после аварийной остановки контейнера блокировка
+освобождается ОС, а оставшийся файл `.backup.flock` удалять не нужно.
 
 ```bash
 docker compose --profile ops run --rm backup /scripts/backup.sh
@@ -95,6 +97,9 @@ journalctl -u santehgo-backup.service
 
 Копия только на том же VPS не защищает от потери сервера. Успешная off-host синхронизация
 через `OFFSITE_BACKUP_TARGET` обязательна для production-приёмки.
+Оба systemd-сервиса обращаются к `/opt/santehgo/current`, общему Compose-проекту
+`santehgo` и постоянному `/opt/santehgo/.env`; после обновления unit-файлов
+нужно выполнить `systemctl daemon-reload`.
 
 ## Health monitoring и тревоги
 
@@ -138,7 +143,8 @@ journalctl -u santehgo-monitor.service
 ## Откат релиза
 
 Деплой распаковывает каждый commit в `/opt/santehgo/releases/<sha>` и меняет
-`current` только после system checks. Перед миграциями создаётся проверенный backup.
+`current` только после system checks и публичной проверки `/health/ready/`.
+Перед миграциями создаётся проверенный backup.
 Если активация не проходит, прежние контейнеры запускаются снова.
 
 Ручной откат к `previous`:
