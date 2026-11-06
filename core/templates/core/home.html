@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>САНТЕХГО.РФ — ВСЁ ДЛЯ ВАШЕГО КОМФОРТА</title>
   <link rel="stylesheet" href="{% static 'core/css/fonts.css' %}?v=1">
-  <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=69">
+  <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=70">
   <link rel="stylesheet" href="{% static 'core/css/cta.css' %}?v=1">
 </head>
 <body>
@@ -124,7 +124,7 @@
             </span>
             <div>
               <h2 class="quote__title">Быстрый расчёт</h2>
-              <p class="quote__text">Оставьте данные — мы перезвоним и скажем точную стоимость</p>
+              <p class="quote__text">Оставьте данные — мы перезвоним, уточним детали и назовём предварительный ориентир</p>
             </div>
           </div>
 
@@ -309,6 +309,7 @@
       <div class="catalog-empty" id="categories-empty" hidden>
         <strong>Ничего не найдено</strong>
         <span>Попробуйте изменить запрос или выбрать другую категорию.</span>
+        <button class="catalog-empty__reset" id="catalog-empty-reset" type="button">Сбросить фильтры</button>
       </div>
     </section>
   </main>
@@ -378,6 +379,6 @@
 
   {{ categories|json_script:"categories-data" }}
   <script src="{% static 'core/js/hero.js' %}?v=4" defer></script>
-  <script src="{% static 'core/js/services.js' %}?v=43" defer></script>
+  <script src="{% static 'core/js/services.js' %}?v=44" defer></script>
 </body>
 </html>

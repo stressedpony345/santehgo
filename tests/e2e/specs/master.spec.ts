@@ -43,7 +43,8 @@ test('черновик отчёта и выбранные файлы переж�
 
 test('поиск общей очереди фильтрует заявки без открытия карточек', async ({ page }) => {
   const search = page.getByRole('searchbox', { name: 'Поиск по общей очереди' });
-  await expect(page.locator('#available-list .request-card')).toHaveCount(2);
+  await expect(page.locator('#available-list').getByRole('heading', { name: 'Течёт смеситель на кухне' })).toBeVisible();
+  await expect(page.locator('#available-list').getByRole('heading', { name: 'Установить стиральную машину' })).toBeVisible();
   await search.fill('стиральную');
   await expect(page.locator('#available-list .request-card')).toHaveCount(1);
   await expect(page.getByRole('heading', { name: 'Установить стиральную машину' })).toBeVisible();

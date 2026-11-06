@@ -1,5 +1,20 @@
 import { expect, test } from '../fixtures/playwright';
 
+test('прокрутка с мобильной клавиатурой не снимает фокус с адреса', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/');
+  const address = page.locator('#address-input');
+  await address.focus();
+  await page.clock.fastForward(600);
+  await page.evaluate(() => window.dispatchEvent(new Event('scroll')));
+  await expect(address).toBeFocused();
+});
+
+test('быстрый расчёт не обещает точную стоимость до уточнения деталей', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.quote__text')).toContainText('предварительный ориентир');
+});
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
 });

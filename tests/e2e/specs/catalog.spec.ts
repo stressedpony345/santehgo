@@ -5,6 +5,38 @@ test.beforeEach(async ({ page }) => {
   await page.locator('#content').scrollIntoViewIfNeeded();
 });
 
+test('поиск сбрасывает выбранную категорию, чтобы фильтры не противоречили результатам', async ({ page }) => {
+  const category = page.getByRole('button', { name: 'Кухня', exact: true });
+  await category.click();
+  await expect(category).toHaveAttribute('aria-pressed', 'true');
+
+  await page.getByRole('searchbox', { name: 'Что нужно сделать?' }).fill('протечка');
+
+  await expect(page.getByRole('button', { name: 'Все категории' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(category).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('пустой результат предлагает сбросить поиск и возвращает каталог', async ({ page }) => {
+  const search = page.getByRole('searchbox', { name: 'Что нужно сделать?' });
+  await search.fill('несуществующая услуга');
+  await expect(page.locator('#categories-empty')).toBeVisible();
+
+  await page.locator('#categories-empty').getByRole('button', { name: 'Сбросить фильтры' }).click();
+
+  await expect(search).toHaveValue('');
+  await expect(page.locator('.service-card')).toHaveCount(7);
+});
+
+test('выбор категории после поиска показывает именно выбранный раздел', async ({ page }) => {
+  const search = page.getByRole('searchbox', { name: 'Что нужно сделать?' });
+  await search.fill('протечка');
+  await page.getByRole('button', { name: 'Кухня', exact: true }).click();
+
+  await expect(search).toHaveValue('');
+  await expect(page.getByRole('button', { name: 'Кухня', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.service-card')).toHaveCount(1);
+});
+
 test('глобальный поиск учитывает названия и описания работ', async ({ page }) => {
   const search = page.getByRole('searchbox', { name: 'Что нужно сделать?' });
   await search.fill('влажных зон');

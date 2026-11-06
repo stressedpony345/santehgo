@@ -1511,6 +1511,19 @@ label.quote__field {
   font-size: 1.15rem;
 }
 
+.catalog-empty__reset {
+  min-height: 44px;
+  margin-top: 1rem;
+  padding: 0.6rem 1.25rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.75rem;
+  background: #fff;
+  color: var(--bg-deep);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .service-card {
   overflow: hidden;
   border: 1px solid rgba(26, 127, 212, 0.18);

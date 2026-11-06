@@ -789,17 +789,6 @@
     closeFloatingOverlay(activeFloatingOverlay);
   }, true);
 
-  let mobileInputFocusedAt = 0;
-  document.addEventListener('focusin', (event) => {
-    if (event.target.matches?.('#address-input, .select__search')) mobileInputFocusedAt = Date.now();
-  });
-  window.addEventListener('scroll', (event) => {
-    const active = document.activeElement;
-    if (!active?.matches?.('#address-input, .select__search')) return;
-    if (isFloatingOverlayTarget(activeFloatingOverlay, event.target)) return;
-    if (Date.now() - mobileInputFocusedAt < 500) return;
-    active.blur();
-  }, true);
   const positionActiveFloatingOverlay = () => activeFloatingOverlay?.position();
   window.addEventListener('resize', positionActiveFloatingOverlay);
   window.visualViewport?.addEventListener('resize', positionActiveFloatingOverlay);
@@ -994,6 +983,7 @@
       button.classList.toggle('is-active', String(category.id) === activeCategoryId);
       button.setAttribute('aria-pressed', String(String(category.id) === activeCategoryId));
       button.addEventListener('click', () => {
+        searchInput.value = '';
         activeCategoryId = String(category.id);
         categoryNav.querySelectorAll('.category-nav__item').forEach((item) => {
           const isActive = item.dataset.categoryId === activeCategoryId;
@@ -1233,7 +1223,27 @@
   }
 
   searchInput.addEventListener('input', () => {
+    if (searchInput.value.trim() && activeCategoryId !== 'all') {
+      activeCategoryId = 'all';
+      categoryNav?.querySelectorAll('.category-nav__item').forEach((item) => {
+        const isActive = item.dataset.categoryId === 'all';
+        item.classList.toggle('is-active', isActive);
+        item.setAttribute('aria-pressed', String(isActive));
+      });
+    }
     renderCatalog();
+  });
+
+  document.getElementById('catalog-empty-reset')?.addEventListener('click', () => {
+    searchInput.value = '';
+    activeCategoryId = 'all';
+    categoryNav?.querySelectorAll('.category-nav__item').forEach((item) => {
+      const isActive = item.dataset.categoryId === 'all';
+      item.classList.toggle('is-active', isActive);
+      item.setAttribute('aria-pressed', String(isActive));
+    });
+    renderCatalog();
+    searchInput.focus();
   });
 
   workListClear?.addEventListener('click', () => {
