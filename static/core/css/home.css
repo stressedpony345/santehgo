@@ -2817,3 +2817,10 @@ body.modal-open {
     width: min(210px, 72vw);
   }
 }
+.form-honeypot {
+  position: fixed !important;
+  inset-inline-start: -10000px !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+}

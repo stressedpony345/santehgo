@@ -353,3 +353,18 @@ class PushSubscription(models.Model):
 
     def __str__(self):
         return f'{self.user} — {self.endpoint[:48]}'
+
+
+class PublicRequestRateBucket(models.Model):
+    fingerprint = models.CharField(max_length=64)
+    window_started_at = models.DateTimeField()
+    attempts = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=('fingerprint', 'window_started_at'),
+                name='unique_public_request_rate_bucket',
+            ),
+        ]
+        indexes = [models.Index(fields=('window_started_at',))]

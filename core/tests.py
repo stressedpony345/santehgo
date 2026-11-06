@@ -47,6 +47,7 @@ class MultiServiceRequestTests(TestCase):
         self.assertContains(response, 'Оставить заявку')
         self.assertContains(response, 'work-list-submit')
         self.assertContains(response, '/personal-data-consent/')
+        self.assertContains(response, 'name="company_website"')
 
     @override_settings(
         LEGAL_OPERATOR_NAME='ИП Иванов Иван Иванович',
@@ -209,6 +210,76 @@ class MultiServiceRequestTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+
+    @override_settings(PUBLIC_REQUEST_RATE_LIMIT=2, PUBLIC_REQUEST_RATE_WINDOW_SECONDS=300)
+    def test_request_rate_limit_rejects_excess_new_requests_from_one_ip(self):
+        payload = {
+            'full_name': 'Клиент',
+            'phone': '+7 999 123-45-67',
+            'consent': True,
+            'subcategory_ids': [self.first.id],
+        }
+
+        for index in range(2):
+            response = self.client.post(
+                '/api/requests/',
+                data=json.dumps(payload),
+                content_type='application/json',
+                HTTP_IDEMPOTENCY_KEY=f'rate-limit-request-{index}',
+                REMOTE_ADDR='203.0.113.10',
+            )
+            self.assertEqual(response.status_code, 200)
+
+        blocked = self.client.post(
+            '/api/requests/',
+            data=json.dumps(payload),
+            content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='rate-limit-request-3',
+            REMOTE_ADDR='203.0.113.10',
+        )
+
+        self.assertEqual(blocked.status_code, 429)
+        self.assertEqual(blocked.json()['error'], 'Слишком много попыток. Попробуйте позже.')
+        self.assertEqual(blocked['Retry-After'], '300')
+        self.assertEqual(ServiceRequest.objects.count(), 2)
+
+    @override_settings(PUBLIC_REQUEST_RATE_LIMIT=1, PUBLIC_REQUEST_RATE_WINDOW_SECONDS=300)
+    def test_request_rate_limit_allows_idempotent_retry(self):
+        payload = json.dumps({
+            'full_name': 'Клиент',
+            'phone': '+7 999 123-45-67',
+            'consent': True,
+            'subcategory_ids': [self.first.id],
+        })
+        headers = {
+            'HTTP_IDEMPOTENCY_KEY': 'rate-limit-idempotent-retry',
+            'REMOTE_ADDR': '203.0.113.11',
+        }
+
+        first = self.client.post('/api/requests/', data=payload, content_type='application/json', **headers)
+        repeated = self.client.post('/api/requests/', data=payload, content_type='application/json', **headers)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(ServiceRequest.objects.count(), 1)
+
+    def test_request_honeypot_discards_automated_submission(self):
+        response = self.client.post(
+            '/api/requests/',
+            data=json.dumps({
+                'full_name': 'Клиент',
+                'phone': '+7 999 123-45-67',
+                'consent': True,
+                'subcategory_ids': [self.first.id],
+                'company_website': 'https://spam.example',
+            }),
+            content_type='application/json',
+            HTTP_IDEMPOTENCY_KEY='honeypot-spam-request',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['ok'])
         self.assertEqual(ServiceRequest.objects.count(), 0)
 
     def test_request_success_page(self):

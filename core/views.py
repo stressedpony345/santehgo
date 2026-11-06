@@ -28,6 +28,7 @@ from .notifications import enqueue_client_notification
 from .roles import is_master
 from .events import record_request_event
 from .models import ServiceRequestEvent
+from .rate_limits import consume_public_request_attempt
 
 
 master_required = user_passes_test(is_master, login_url='/masters/login/')
@@ -907,6 +908,9 @@ def create_request(request):
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({'ok': False, 'error': 'Некорректные данные'}, status=400)
 
+    if str(data.get('company_website', '')).strip():
+        return JsonResponse({'ok': True, 'success_url': '/request-success/'})
+
     full_name = str(data.get('full_name', '')).strip()
     phone = str(data.get('phone', '')).strip()
     issue = str(data.get('issue', '')).strip()
@@ -974,6 +978,16 @@ def create_request(request):
         'subcategory_ids': sorted(service.id for service in selected),
         'work_ids': sorted(work.id for work in selected_works),
     }, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
+
+    if not ServiceRequest.objects.filter(idempotency_key=idempotency_key).exists():
+        allowed, retry_after = consume_public_request_attempt(request)
+        if not allowed:
+            response = JsonResponse({
+                'ok': False,
+                'error': 'Слишком много попыток. Попробуйте позже.',
+            }, status=429)
+            response['Retry-After'] = str(retry_after)
+            return response
 
     with transaction.atomic():
         values = {

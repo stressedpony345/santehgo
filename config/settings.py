@@ -170,6 +170,9 @@ CLIENT_NOTIFICATION_TOKEN = os.environ.get('CLIENT_NOTIFICATION_TOKEN', '')
 CLIENT_NOTIFICATION_TIMEOUT = float(os.environ.get('CLIENT_NOTIFICATION_TIMEOUT', '5'))
 PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL', '')
 DEMO_FINANCE_ENABLED = os.environ.get('DEMO_FINANCE_ENABLED', 'false').lower() in {'1', 'true', 'yes'}
+PUBLIC_REQUEST_RATE_LIMIT = int(os.environ.get('PUBLIC_REQUEST_RATE_LIMIT', '5'))
+PUBLIC_REQUEST_RATE_WINDOW_SECONDS = int(os.environ.get('PUBLIC_REQUEST_RATE_WINDOW_SECONDS', '300'))
+PUBLIC_CLIENT_IP_HEADER = os.environ.get('PUBLIC_CLIENT_IP_HEADER', 'REMOTE_ADDR')
 
 LOGIN_URL = '/masters/login/'
 MASTER_VAPID_KEY_PATH = Path(os.environ.get('MASTER_VAPID_KEY_PATH', BASE_DIR / 'data' / 'vapid_private.pem'))

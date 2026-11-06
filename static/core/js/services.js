@@ -1331,6 +1331,7 @@
         ? quoteDraft.work_ids
         : currentlySelectedWorks.map((work) => Number(work.id)),
       consent: formData.get('consent') === 'on',
+      company_website: String(formData.get('company_website') || ''),
     };
 
     const submitBtn = contactsForm.querySelector('button[type="submit"]');

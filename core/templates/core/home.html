@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>САНТЕХГО.РФ — ВСЁ ДЛЯ ВАШЕГО КОМФОРТА</title>
   <link rel="stylesheet" href="{% static 'core/css/fonts.css' %}?v=1">
-  <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=68">
+  <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=69">
   <link rel="stylesheet" href="{% static 'core/css/cta.css' %}?v=1">
 </head>
 <body>
@@ -352,6 +352,10 @@
       <p class="modal__subtitle">Оставьте контакты — перезвоним и уточним детали</p>
       <div class="request-summary" id="request-summary" hidden></div>
       <form class="contacts" id="contacts-form">
+        <label class="form-honeypot" aria-hidden="true">
+          <span>Сайт компании</span>
+          <input type="url" name="company_website" tabindex="-1" autocomplete="off">
+        </label>
         <label class="field">
           <span class="field__label">ФИО</span>
           <input class="field__input" type="text" name="full_name" required maxlength="200" placeholder="Иванов Иван Иванович" autocomplete="name">
@@ -374,6 +378,6 @@
 
   {{ categories|json_script:"categories-data" }}
   <script src="{% static 'core/js/hero.js' %}?v=4" defer></script>
-  <script src="{% static 'core/js/services.js' %}?v=42" defer></script>
+  <script src="{% static 'core/js/services.js' %}?v=43" defer></script>
 </body>
 </html>
