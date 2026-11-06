@@ -57,6 +57,22 @@ test('контакты из каталога учитываются один р�
   await expect.poll(() => events).toEqual([{ event: 'catalog_started' }, { event: 'contacts_opened' }]);
 });
 
+test('последняя карточка видна над панелью выбора на ширине 320 пикселей', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.locator('.service-card').first().getByRole('button', { name: 'Выбрать работы' }).click();
+  const dialog = page.getByRole('dialog').filter({ has: page.locator('#services-form') });
+  await dialog.getByRole('checkbox').first().check();
+  await dialog.getByRole('button', { name: 'Сохранить выбор' }).click();
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+
+  const card = await page.locator('.service-card').last().boundingBox();
+  const panel = await page.locator('#work-list').boundingBox();
+  expect(card).not.toBeNull();
+  expect(panel).not.toBeNull();
+  expect(card!.y).toBeGreaterThanOrEqual(0);
+  expect(card!.y + card!.height).toBeLessThanOrEqual(panel!.y);
+});
+
 test('поиск сбрасывает выбранную категорию, чтобы фильтры не противоречили результатам', async ({ page }) => {
   const category = page.getByRole('button', { name: 'Кухня', exact: true });
   await category.click();
