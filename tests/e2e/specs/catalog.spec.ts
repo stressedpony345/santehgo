@@ -1,8 +1,54 @@
 import { expect, test } from '../fixtures/playwright';
+import type { Page } from '@playwright/test';
+
+async function loadCatalog(page: Page, catalog: unknown) {
+  await page.route('**/', async (route) => {
+    if (!route.request().isNavigationRequest()) return route.continue();
+    const response = await route.fetch();
+    const original = await response.text();
+    const html = original.replace(
+      /(<script id="categories-data" type="application\/json">)[\s\S]*?(<\/script>)/,
+      (_match, start, end) => `${start}${JSON.stringify(catalog).replaceAll('<', '\\u003C')}${end}`,
+    );
+    expect(html).not.toBe(original);
+    await route.fulfill({ response, body: html });
+  });
+  await page.goto('/');
+}
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await page.locator('#content').scrollIntoViewIfNeeded();
+});
+
+test('название из каталога отображается текстом без HTML-элементов', async ({ page }) => {
+  const injectedName = '<img src=x onerror="window.__catalogXss=true">';
+  const catalog = [{
+    id: 901,
+    name: injectedName,
+    subcategories: [{ id: 902, name: 'Ремонт', description: '', image_url: '', price: 1000,
+      works: [{ id: 903, name: 'Проверка', description: '', price: 1000 }] }],
+  }];
+  await loadCatalog(page, catalog);
+  await expect(page.locator('.service-card')).toHaveCount(1);
+  await expect(page.locator('.service-card__category')).toHaveText(injectedName);
+  await expect(page.locator('.service-card img[onerror]')).toHaveCount(0);
+});
+
+test('название работы остаётся текстом в выборе и резюме заявки', async ({ page }) => {
+  const injectedWork = '<img src=x onerror="window.__workXss=true">';
+  await loadCatalog(page, [{ id: 901, name: 'Ванная', subcategories: [{
+    id: 902, name: 'Ремонт', description: '', image_url: '', price: 1000,
+    works: [{ id: 903, name: injectedWork, description: '', price: 1000 }],
+  }] }]);
+
+  await page.locator('.service-card').getByRole('button', { name: 'Выбрать работы' }).click();
+  const dialog = page.getByRole('dialog').filter({ has: page.locator('#services-form') });
+  await expect(dialog.locator('.check-item__name')).toHaveText(injectedWork);
+  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('button', { name: 'Сохранить выбор' }).click();
+  await expect(page.locator('#request-summary li')).toContainText(injectedWork);
+  await expect(page.locator('#request-summary img[onerror]')).toHaveCount(0);
 });
 
 test('выбор категории отправляет только обезличенный код начала каталога', async ({ page }) => {

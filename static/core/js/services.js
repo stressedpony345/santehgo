@@ -965,9 +965,18 @@
 
     if (requestSummary) {
       requestSummary.hidden = selected.length === 0;
-      requestSummary.innerHTML = selected.length
-        ? `<strong>Вы выбрали:</strong><ul>${selected.map((work) => `<li>${work.serviceName}: ${work.name} — ${formatPrice(work.price)}</li>`).join('')}</ul>`
-        : '';
+      requestSummary.replaceChildren();
+      if (selected.length) {
+        const title = document.createElement('strong');
+        title.textContent = 'Вы выбрали:';
+        const list = document.createElement('ul');
+        selected.forEach((work) => {
+          const item = document.createElement('li');
+          item.textContent = `${work.serviceName}: ${work.name} — ${formatPrice(work.price)}`;
+          list.appendChild(item);
+        });
+        requestSummary.append(title, list);
+      }
     }
   }
 
@@ -1132,21 +1141,31 @@
       const isSelected = selectedCount > 0;
       card.className = `service-card${isSelected ? ' is-selected' : ''}`;
       card.innerHTML = `
-        <div class="service-card__media${service.hasCustomImage ? ' has-photo' : ''}">
-          <img src="${service.image}" alt="${service.name}" width="92" height="92">
-          <span class="service-card__category">${service.categoryName}</span>
+        <div class="service-card__media">
+          <img width="92" height="92">
+          <span class="service-card__category"></span>
         </div>
         <div class="service-card__body">
-          <h2 class="service-card__title">${service.name}</h2>
-          <p class="service-card__description">${service.description}</p>
+          <h2 class="service-card__title"></h2>
+          <p class="service-card__description"></p>
           <div class="service-card__footer">
-            <p class="service-card__price"><span>${service.works.length} ${pluralWorks(service.works.length)} · от</span><strong>${formatPrice(serviceMinPrice(service))}</strong></p>
-            <button class="service-card__action" type="button" aria-pressed="${isSelected}">
-              ${isSelected ? `✓ Выбрано: ${selectedCount}` : 'Выбрать работы'}
-            </button>
+            <p class="service-card__price"><span></span><strong></strong></p>
+            <button class="service-card__action" type="button"></button>
           </div>
         </div>
       `;
+      card.querySelector('.service-card__media').classList.toggle('has-photo', service.hasCustomImage);
+      const image = card.querySelector('.service-card__media img');
+      image.src = service.image;
+      image.alt = service.name;
+      card.querySelector('.service-card__category').textContent = service.categoryName;
+      card.querySelector('.service-card__title').textContent = service.name;
+      card.querySelector('.service-card__description').textContent = service.description;
+      card.querySelector('.service-card__price span').textContent = `${service.works.length} ${pluralWorks(service.works.length)} · от`;
+      card.querySelector('.service-card__price strong').textContent = formatPrice(serviceMinPrice(service));
+      const action = card.querySelector('.service-card__action');
+      action.setAttribute('aria-pressed', String(isSelected));
+      action.textContent = isSelected ? `✓ Выбрано: ${selectedCount}` : 'Выбрать работы';
       card.querySelector('.service-card__action').addEventListener('click', (event) => {
         openServicesModal(service, event.currentTarget);
       });
@@ -1217,16 +1236,24 @@
       const label = document.createElement('label');
       label.className = 'check-item';
       label.innerHTML = `
-        <input type="checkbox" name="work" value="${work.id}" ${modalWorkIds.has(Number(work.id)) ? 'checked' : ''}>
+        <input type="checkbox" name="work">
         <span class="check-item__body">
-          <span>
-            <span class="check-item__name">${work.name}</span>
-            ${work.description ? `<span class="check-item__description">${work.description}</span>` : ''}
-          </span>
-          <span class="check-item__price">${formatPrice(work.price)}</span>
+          <span><span class="check-item__name"></span></span>
+          <span class="check-item__price"></span>
         </span>
       `;
       const input = label.querySelector('input');
+      input.value = String(work.id);
+      input.checked = modalWorkIds.has(Number(work.id));
+      const name = label.querySelector('.check-item__name');
+      name.textContent = work.name;
+      if (work.description) {
+        const description = document.createElement('span');
+        description.className = 'check-item__description';
+        description.textContent = work.description;
+        name.after(description);
+      }
+      label.querySelector('.check-item__price').textContent = formatPrice(work.price);
       input.addEventListener('change', () => {
         const id = Number(input.value);
         if (input.checked) modalWorkIds.add(id);
