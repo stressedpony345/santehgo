@@ -240,6 +240,12 @@ class MultiServiceRequestTests(TestCase):
         self.assertContains(response, '/personal-data-consent/')
         self.assertContains(response, 'name="company_website"')
 
+    def test_quick_form_does_not_promise_no_third_party_data_processing(self):
+        response = self.client.get('/')
+
+        self.assertNotContains(response, 'не передаются третьим лицам')
+        self.assertContains(response, 'Условия обработки</a>')
+
     def test_readiness_reports_healthy_database_and_media_storage(self):
         with tempfile.TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=Path(media_root)):
             response = self.client.get('/health/ready/')

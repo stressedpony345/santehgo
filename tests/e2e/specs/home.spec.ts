@@ -15,6 +15,13 @@ test('быстрый расчёт не обещает точную стоимо�
   await expect(page.locator('.quote__text')).toContainText('предварительный ориентир');
 });
 
+test('у быстрой формы доступно согласие без обещания отсутствия передачи данных', async ({ page }) => {
+  await page.goto('/');
+  const notice = page.locator('.quote__secure');
+  await expect(notice).not.toContainText('не передаются третьим лицам');
+  await expect(notice.getByRole('link', { name: 'Условия обработки' })).toHaveAttribute('href', '/personal-data-consent/');
+});
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
 });
