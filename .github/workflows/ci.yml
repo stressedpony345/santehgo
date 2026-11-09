@@ -97,7 +97,7 @@ jobs:
 
       - name: Create and restore a verified backup
         run: |
-          if docker compose --profile ops run --rm backup -c 'exec 9>/backups/.backup.flock; flock -n 9; kill -9 $$'; then
+          if docker compose --profile ops run --rm --entrypoint /bin/sh backup -c 'exec 9>/backups/.backup.flock; flock -n 9; kill -9 $$'; then
             echo "Interrupted backup simulation unexpectedly succeeded" >&2
             exit 1
           fi
