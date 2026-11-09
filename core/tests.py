@@ -167,8 +167,9 @@ class ReleaseOperationsTests(SimpleTestCase):
     def test_activation_checks_public_readiness_before_committing_release(self):
         script = (Path(__file__).resolve().parent.parent / 'ops/activate-release.sh').read_text(encoding='utf-8')
 
-        self.assertIn('curl --fail', script)
-        probe_position = script.index('curl --fail')
+        self.assertIn('urllib.request.urlopen(request, timeout=10)', script)
+        self.assertIn('for attempt in range(6)', script)
+        probe_position = script.index('python3 - "$ready_url"')
         self.assertLess(probe_position, script.index('ln -sfn "$release_dir" "$current_link"'))
         self.assertLess(probe_position, script.index('trap - EXIT HUP INT TERM'))
 
