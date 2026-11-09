@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>САНТЕХГО.РФ — ВСЁ ДЛЯ ВАШЕГО КОМФОРТА</title>
   <link rel="stylesheet" href="{% static 'core/css/fonts.css' %}?v=1">
-  <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=70">
+  <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=71">
   <link rel="stylesheet" href="{% static 'core/css/cta.css' %}?v=1">
 </head>
 <body>
@@ -92,26 +92,13 @@
             </li>
           </ul>
 
-          <div class="hero__visual">
-            <div class="hero__visual-orbit" aria-hidden="true"></div>
-            <div class="hero__plumber">
-              <img
-                class="hero__plumber-img"
-                src="{% static 'core/img/hero-master.jpg' %}"
-                alt="Мастер САНТЕХГО"
-                width="1024"
-                height="705"
-                decoding="async"
-                fetchpriority="high"
-              >
-            </div>
-            <div class="hero__visual-badge hero__visual-badge--top">
-              <span class="hero__badge-dot" aria-hidden="true"></span><strong>24/7</strong><span>приём заявок</span>
-            </div>
-            <div class="hero__visual-badge hero__visual-badge--bottom">
-              <span class="hero__badge-check">✓</span><span>Цена известна<br><strong>до начала работ</strong></span>
-            </div>
-          </div>
+          <section class="hero__about" aria-labelledby="about-title">
+            <p class="hero__about-label">Знакомство с сервисом</p>
+            <h2 id="about-title">О нас</h2>
+            <p>САНТЕХГО — сантехнический сервис в Челябинске. Помогаем решать повседневные задачи: устранить течь или засор, отремонтировать и установить сантехнику, разобраться с отоплением.</p>
+            <p>Мы молодая компания и открыто об этом говорим. Для нас доверие начинается не с громких обещаний, а с понятного разговора: выслушать вас, разобраться в задаче, объяснить предстоящие работы и согласовать стоимость до их начала. Если потребуется что-то дополнительное, сначала обсудим это с вами.</p>
+            <p>Мы хотим, чтобы после визита мастера у вас осталось не только решение проблемы, но и спокойное ощущение: с вами были честны и отнеслись к вашему дому с уважением.</p>
+          </section>
         </div>
 
         <form class="quote" id="quote-form">
@@ -312,6 +299,54 @@
         <button class="catalog-empty__reset" id="catalog-empty-reset" type="button">Сбросить фильтры</button>
       </div>
     </section>
+
+    <section class="examples" aria-labelledby="examples-title">
+      <div class="examples__head">
+        <p class="examples__eyebrow">Как это выглядит</p>
+        <h2 id="examples-title">Примеры «до и после»</h2>
+        <p>Передвигайте ползунок, чтобы сравнить состояние до и после работы.</p>
+      </div>
+
+      <div class="examples__grid">
+        <figure class="comparison" style="--comparison-image: url('https://upload.wikimedia.org/wikipedia/commons/1/18/Before_and_after_fauset_sink.jpg')">
+          <div class="comparison__canvas">
+            <div class="comparison__layer comparison__layer--after" aria-hidden="true"></div>
+            <div class="comparison__layer comparison__layer--before" aria-hidden="true"></div>
+            <span class="comparison__label comparison__label--before">До</span>
+            <span class="comparison__label comparison__label--after">После</span>
+            <span class="comparison__divider" aria-hidden="true"><span>↔</span></span>
+            <input class="comparison__range" type="range" min="0" max="100" value="50" aria-label="Сравнить кухонную мойку до и после">
+          </div>
+          <figcaption>Замена кухонной мойки</figcaption>
+        </figure>
+
+        <figure class="comparison" style="--comparison-image: url('https://upload.wikimedia.org/wikipedia/commons/d/db/Before_and_after_toilet.jpg')">
+          <div class="comparison__canvas">
+            <div class="comparison__layer comparison__layer--after" aria-hidden="true"></div>
+            <div class="comparison__layer comparison__layer--before" aria-hidden="true"></div>
+            <span class="comparison__label comparison__label--before">До</span>
+            <span class="comparison__label comparison__label--after">После</span>
+            <span class="comparison__divider" aria-hidden="true"><span>↔</span></span>
+            <input class="comparison__range" type="range" min="0" max="100" value="50" aria-label="Сравнить установку сантехники до и после">
+          </div>
+          <figcaption>Установка сантехники</figcaption>
+        </figure>
+
+        <figure class="comparison" style="--comparison-image: url('https://upload.wikimedia.org/wikipedia/commons/3/3c/Before_and_after_under_sink.jpg')">
+          <div class="comparison__canvas">
+            <div class="comparison__layer comparison__layer--after" aria-hidden="true"></div>
+            <div class="comparison__layer comparison__layer--before" aria-hidden="true"></div>
+            <span class="comparison__label comparison__label--before">До</span>
+            <span class="comparison__label comparison__label--after">После</span>
+            <span class="comparison__divider" aria-hidden="true"><span>↔</span></span>
+            <input class="comparison__range" type="range" min="0" max="100" value="50" aria-label="Сравнить разводку под мойкой до и после">
+          </div>
+          <figcaption>Работа с трубами под мойкой</figcaption>
+        </figure>
+      </div>
+
+      <p class="examples__note">Демонстрационные изображения, не работы САНТЕХГО. Автор: Robertosplumbing, лицензия <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>; <a href="https://commons.wikimedia.org/wiki/File:Before_and_after_fauset_sink.jpg" target="_blank" rel="noopener noreferrer">источник</a>.</p>
+    </section>
   </main>
 
   <aside class="work-list" id="work-list" hidden aria-label="Выбранные работы">
@@ -380,5 +415,6 @@
   {{ categories|json_script:"categories-data" }}
   <script src="{% static 'core/js/hero.js' %}?v=4" defer></script>
   <script src="{% static 'core/js/services.js' %}?v=46" defer></script>
+  <script src="{% static 'core/js/comparison.js' %}?v=1" defer></script>
 </body>
 </html>
