@@ -70,6 +70,7 @@ jobs:
     timeout-minutes: 15
     env:
       POSTGRES_PASSWORD: ci-restore-password-9b87c24e
+      DJANGO_SECRET_KEY: ci-only-key-9b87c24e-not-for-production
       DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
       LEGAL_PAGES_REQUIRED: "false"
       CLIENT_NOTIFICATIONS_ENABLED: "false"

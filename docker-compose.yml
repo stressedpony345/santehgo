@@ -20,6 +20,7 @@ services:
     environment:
       DJANGO_DEBUG: "false"
       DJANGO_PRODUCTION: "true"
+      DJANGO_SECRET_KEY: "${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}"
       DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS in .env}"
       DJANGO_CSRF_TRUSTED_ORIGINS: "${DJANGO_CSRF_TRUSTED_ORIGINS:-}"
       DJANGO_MEDIA_ROOT: /app/media
@@ -74,6 +75,7 @@ services:
     environment:
       DJANGO_DEBUG: "false"
       DJANGO_PRODUCTION: "true"
+      DJANGO_SECRET_KEY: "${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}"
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       POSTGRES_DB: "${POSTGRES_DB:-santehgo}"
