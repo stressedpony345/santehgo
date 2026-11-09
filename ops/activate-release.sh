@@ -52,8 +52,23 @@ compose "$release_dir" up -d --remove-orphans
 compose "$release_dir" exec -T web python manage.py check
 compose "$release_dir" exec -T web python manage.py check_master_admin --check-approval
 ready_url="${RELEASE_READY_URL:-https://xn--80agf5ahnjz.xn--p1ai/health/ready/}"
-curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors --max-time 10 \
-    -H 'Cache-Control: no-cache' "$ready_url" >/dev/null
+python3 - "$ready_url" <<'PY'
+import sys
+import time
+import urllib.request
+
+request = urllib.request.Request(sys.argv[1], headers={'Cache-Control': 'no-cache'})
+for attempt in range(6):
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            if response.status == 200:
+                break
+    except Exception:
+        pass
+    if attempt == 5:
+        sys.exit('Production readiness check failed after six attempts')
+    time.sleep(3)
+PY
 
 if [ -n "$old_release" ]; then
     ln -sfn "$old_release" "$previous_link"
