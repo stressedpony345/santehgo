@@ -1511,6 +1511,19 @@ label.quote__field {
   font-size: 1.15rem;
 }
 
+.catalog-empty__reset {
+  min-height: 44px;
+  margin-top: 1rem;
+  padding: 0.6rem 1.25rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.75rem;
+  background: #fff;
+  color: var(--bg-deep);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .service-card {
   overflow: hidden;
   border: 1px solid rgba(26, 127, 212, 0.18);
@@ -1903,6 +1916,29 @@ body.modal-open {
 .contacts {
   display: grid;
   gap: 0.9rem;
+}
+
+.contacts__consent {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 0.65rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.contacts__consent input {
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  accent-color: var(--primary, #1683d8);
+}
+
+.contacts__consent input:focus-visible {
+  outline: 2px solid #1683d8;
+  outline-offset: 3px;
 }
 
 .field {
@@ -2793,4 +2829,11 @@ body.modal-open {
   .hero__plumber {
     width: min(210px, 72vw);
   }
+}
+.form-honeypot {
+  position: fixed !important;
+  inset-inline-start: -10000px !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
 }

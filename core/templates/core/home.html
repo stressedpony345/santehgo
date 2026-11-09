@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>САНТЕХГО.РФ — ВСЁ ДЛЯ ВАШЕГО КОМФОРТА</title>
   <link rel="stylesheet" href="{% static 'core/css/fonts.css' %}?v=1">
-  <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=67">
+  <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=70">
   <link rel="stylesheet" href="{% static 'core/css/cta.css' %}?v=1">
 </head>
 <body>
@@ -124,7 +124,7 @@
             </span>
             <div>
               <h2 class="quote__title">Быстрый расчёт</h2>
-              <p class="quote__text">Оставьте данные — мы перезвоним и скажем точную стоимость</p>
+              <p class="quote__text">Оставьте данные — мы перезвоним, уточним детали и назовём предварительный ориентир</p>
             </div>
           </div>
 
@@ -226,7 +226,7 @@
               <rect x="5" y="11" width="14" height="10" rx="2" stroke="#6b8aa8" stroke-width="1.6"/>
               <path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#6b8aa8" stroke-width="1.6" stroke-linecap="round"/>
             </svg>
-            Ваши данные в безопасности и не передаются третьим лицам
+            Данные для оформления заявки. <a href="{% url 'personal_data_consent' %}">Условия обработки</a>
           </p>
         </form>
       </div>
@@ -309,6 +309,7 @@
       <div class="catalog-empty" id="categories-empty" hidden>
         <strong>Ничего не найдено</strong>
         <span>Попробуйте изменить запрос или выбрать другую категорию.</span>
+        <button class="catalog-empty__reset" id="catalog-empty-reset" type="button">Сбросить фильтры</button>
       </div>
     </section>
   </main>
@@ -352,6 +353,10 @@
       <p class="modal__subtitle">Оставьте контакты — перезвоним и уточним детали</p>
       <div class="request-summary" id="request-summary" hidden></div>
       <form class="contacts" id="contacts-form">
+        <label class="form-honeypot" aria-hidden="true">
+          <span>Сайт компании</span>
+          <input type="url" name="company_website" tabindex="-1" autocomplete="off">
+        </label>
         <label class="field">
           <span class="field__label">ФИО</span>
           <input class="field__input" type="text" name="full_name" required maxlength="200" placeholder="Иванов Иван Иванович" autocomplete="name">
@@ -360,7 +365,11 @@
           <span class="field__label">Телефон</span>
           <input class="field__input" type="tel" name="phone" required maxlength="32" placeholder="+7 (999) 123-45-67" autocomplete="tel">
         </label>
-        <p class="modal__error" id="contacts-error" hidden></p>
+        <label class="contacts__consent">
+          <input type="checkbox" name="consent" required>
+          <span>Согласен на обработку имени, телефона и данных заявки, чтобы со мной могли связаться, на условиях <a href="{% url 'personal_data_consent' %}" target="_blank" rel="noopener">согласия на обработку персональных данных</a></span>
+        </label>
+        <p class="modal__error" id="contacts-error" role="alert" tabindex="-1" hidden></p>
         <button class="btn btn--go" type="submit">Отправить заявку</button>
       </form>
     </div>
@@ -370,6 +379,6 @@
 
   {{ categories|json_script:"categories-data" }}
   <script src="{% static 'core/js/hero.js' %}?v=4" defer></script>
-  <script src="{% static 'core/js/services.js' %}?v=40" defer></script>
+  <script src="{% static 'core/js/services.js' %}?v=46" defer></script>
 </body>
 </html>

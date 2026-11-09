@@ -19,6 +19,25 @@ PostgreSQL. База PostgreSQL и изображения находятся в 
 Для запуска по домену скопируйте `.env.example` в `.env` и замените
 `example.ru` своим доменом. После этого снова выполните команду запуска.
 
+## Обязательные данные перед production-деплоем
+
+Заполните в `.env` юридическое имя оператора, версию и дату вступления согласия
+в силу. При `LEGAL_PAGES_REQUIRED=true` Django остановит запуск, если эти поля
+пусты. Не подставляйте тестовые или вымышленные реквизиты.
+
+Клиентские SMS включаются только через `CLIENT_NOTIFICATIONS_ENABLED=true`.
+Провайдер должен принимать HTTPS POST с JSON-полями `channel`, `destination`,
+`message`, `idempotency_key` и поддерживать тот же ключ из заголовка
+`Idempotency-Key`. Авторизация передаётся как `Authorization: Bearer <token>`.
+Контейнер `notifications` отправляет outbox небольшими пачками, повторяет только
+временные ошибки и оставляет окончательно недоставленные сообщения в админке.
+Произвольный HTTP URL, localhost, приватный IP и URL со встроенным паролем не
+проходят production-проверку.
+
+Тестовые QR, подтверждения оплаты и выводы должны оставаться выключенными через
+`DEMO_FINANCE_ENABLED=false`. В production фактическую оплату отмечает администратор
+действием «Отметить фактическую оплату вручную»; операция сохраняется в истории заявки.
+
 ## Полезные команды
 
 ```bash
@@ -42,3 +61,117 @@ docker-compose exec web python manage.py createsuperuser
 Сценарий отправляет на сервер только код и статические файлы, пересобирает
 контейнер Django и применяет новые миграции. PostgreSQL, заявки и изображения,
 загруженные через админку, при этом не перезаписываются.
+
+## Обезличенные метрики основного пути
+
+Сервис хранит только дневные счётчики `quote_started`, `catalog_started`,
+`contacts_opened`, `request_created`. В этих записях нет телефона, адреса,
+имени, поискового текста, IP или идентификатора посетителя. Первые три события
+отправляются браузером не чаще одного раза за загрузку страницы; создание
+заявки считается на сервере ровно один раз, даже при повторе запроса.
+
+```bash
+cd /opt/santehgo/current
+docker compose --project-name santehgo --env-file /opt/santehgo/.env exec -T web python manage.py report_product_metrics
+```
+
+Формат строки: `YYYY-MM-DD,event,count`. Эти числа помогают оценить потери
+на этапах, но не являются уникальными посетителями или точной конверсией:
+несколько вкладок и недоставленные браузерные события возможны. Время и ошибки
+основного сценария по-прежнему нужно записать на реальных телефонах.
+
+## Резервные копии и restore drill
+
+Копия включает PostgreSQL и `media_files`, но не воспроизводимую статику. Архив
+публикуется как `complete-*` только после проверки dump, tar и SHA-256.
+Незавершённая попытка не удаляет прежние копии.
+Backup использует `flock`: после аварийной остановки контейнера блокировка
+освобождается ОС, а оставшийся файл `.backup.flock` удалять не нужно.
+
+```bash
+docker compose --profile ops run --rm backup /scripts/backup.sh
+docker compose --profile ops run --rm backup /scripts/restore-drill.sh latest
+```
+
+Restore drill создаёт отдельную временную БД, восстанавливает dump, сверяет миграции
+и ссылки на media, затем удаляет только эту БД. `restore_drill=ok` фиксируется ежемесячно
+и после изменения backup-скриптов.
+
+Для автозапуска скопируйте `ops/systemd/santehgo-backup.service` и `.timer` в
+`/etc/systemd/system/`. Файл `/etc/santehgo-backup.env`:
+
+```text
+BACKUP_ROOT=/var/backups/santehgo
+OFFSITE_BACKUP_TARGET=backup-user@backup-host:/srv/santehgo
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now santehgo-backup.timer
+sudo systemctl start santehgo-backup.service
+systemctl list-timers santehgo-backup.timer
+journalctl -u santehgo-backup.service
+```
+
+Копия только на том же VPS не защищает от потери сервера. Успешная off-host синхронизация
+через `OFFSITE_BACKUP_TARGET` обязательна для production-приёмки.
+Оба systemd-сервиса обращаются к `/opt/santehgo/current`, общему Compose-проекту
+`santehgo` и постоянному `/opt/santehgo/.env`; после обновления unit-файлов
+нужно выполнить `systemctl daemon-reload`.
+
+## Health monitoring и тревоги
+
+`/health/ready/` выполняет SQL-запрос и пробную запись в media. Docker healthcheck
+и внешний uptime-monitor должны проверять именно этот URL. Ответ не раскрывает
+технические детали.
+Внутренний probe обращается к loopback с первым хостом из `DJANGO_ALLOWED_HOSTS`
+и заголовком `X-Forwarded-Proto: https`, чтобы production HTTPS-редирект не
+превращал исправный контейнер в unhealthy. Внешний монитор проверяет HTTPS-адрес.
+
+Для ERROR-тревог заполните `ERROR_ALERT_WEBHOOK_URL` и `ERROR_ALERT_TOKEN`, затем
+включите `ERROR_ALERTS_ENABLED=true`. Production-check не примет HTTP, localhost,
+приватный IP или пустой токен. После перезапуска обязательно проверьте
+фактическую доставку:
+
+```bash
+docker compose exec -T web python manage.py send_test_alert
+```
+
+Для host-level контроля скопируйте `ops/systemd/santehgo-monitor.service` и `.timer`
+в `/etc/systemd/system/`. Пример `/etc/santehgo-monitor.env`:
+
+```text
+ERROR_ALERT_WEBHOOK_URL=https://alerts.example/api/events
+ERROR_ALERT_TOKEN=replace-with-secret
+MONITOR_DISK_PERCENT=85
+MONITOR_CERT_DAYS=14
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now santehgo-monitor.timer
+sudo systemctl start santehgo-monitor.service
+systemctl list-timers santehgo-monitor.timer
+journalctl -u santehgo-monitor.service
+```
+
+Тест тревоги: временно укажите `MONITOR_DISK_PERCENT=0`, запустите service,
+убедитесь, что сигнал получен, и верните порог `85`.
+
+## Откат релиза
+
+Деплой распаковывает каждый commit в `/opt/santehgo/releases/<sha>` и меняет
+`current` только после system checks и публичной проверки `/health/ready/`.
+Перед миграциями создаётся проверенный backup.
+Если активация не проходит, прежние контейнеры запускаются снова.
+
+Ручной откат к `previous`:
+
+```bash
+sudo /opt/santehgo/current/ops/rollback-release.sh /opt/santehgo
+curl --fail https://xn--80agf5ahnjz.xn--p1ai/health/ready/
+```
+
+Обычный rollback возвращает код, но не откатывает схему БД. Каждая production-миграция
+должна быть backward-compatible. Если она несовместима, вместо автоотката нужно
+остановить запись, восстановить pre-deploy backup и повторить restore drill.

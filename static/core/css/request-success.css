@@ -152,6 +152,54 @@ body {
 .success-status strong { margin-bottom: 4px; font-size: 15px; }
 .success-status small { color: #aac9dd; font-size: 13px; line-height: 1.5; }
 
+.success-summary {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  text-align: left;
+}
+
+.success-summary div {
+  display: grid;
+  grid-template-columns: minmax(110px, .7fr) minmax(0, 1.5fr);
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(162, 215, 245, .14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .04);
+}
+
+.success-summary dt { color: #8fb9d3; font-size: 13px; font-weight: 700; }
+.success-summary dd { margin: 0; color: #fff; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.success-summary dd small { display: block; margin-top: 4px; color: #aac9dd; font-weight: 500; line-height: 1.4; }
+
+.success-feedback {
+  margin: 14px 0 0;
+  padding: 13px 16px;
+  border: 1px solid rgba(91, 226, 160, .34);
+  border-radius: 14px;
+  background: rgba(41, 194, 121, .12);
+  color: #d7ffeb;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.success-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.success-actions form { margin: 0; }
+.success-actions button {
+  min-height: 46px;
+  padding: 0 18px;
+  border: 1px solid rgba(162, 215, 245, .25);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.success-actions button:hover, .success-actions button:focus-visible { background: rgba(255, 255, 255, .17); outline: 2px solid #72d2ff; outline-offset: 2px; }
+.success-actions .success-actions__quiet { color: #c5dced; background: transparent; }
+
 .success-back {
   display: inline-flex;
   align-items: center;
@@ -187,6 +235,8 @@ body {
   .success-text { margin: 20px auto 25px; font-size: 16px; line-height: 1.55; }
   .success-status { align-items: flex-start; gap: 13px; padding: 16px; }
   .success-status__number { font-size: 21px; }
+  .success-summary div { grid-template-columns: 1fr; gap: 5px; }
+  .success-actions, .success-actions form, .success-actions button { width: 100%; }
   .success-back { width: 100%; margin-top: 24px; padding: 0 16px; }
 }
 

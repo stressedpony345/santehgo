@@ -1,7 +1,9 @@
 from django.conf import settings
 from django.db import models
 from decimal import Decimal, ROUND_HALF_UP
+import uuid
 from django.core.validators import MaxValueValidator, MinValueValidator
+from django.utils import timezone
 
 
 class Category(models.Model):
@@ -81,6 +83,7 @@ class Work(models.Model):
 class ServiceRequest(models.Model):
     class PaymentMethod(models.TextChoices):
         UNSET = 'unset', 'Не выбран'
+        MANUAL = 'manual', 'Учтено диспетчером'
         QR = 'qr', 'QR (тест)'
         CASH = 'cash', 'Наличные (тест)'
         BANK = 'bank', 'Безнал (позже)'
@@ -97,6 +100,11 @@ class ServiceRequest(models.Model):
         APPROVED = 'approved', 'Завершена'
         REJECTED = 'rejected', 'Отклонена'
 
+    public_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    idempotency_key = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)
+    idempotency_hash = models.CharField(max_length=64, blank=True, editable=False)
+    consented_at = models.DateTimeField('Согласие получено', blank=True, null=True, editable=False)
+    consent_version = models.CharField(max_length=20, blank=True, editable=False)
     full_name = models.CharField('ФИО', max_length=200, blank=True)
     phone = models.CharField('Телефон', max_length=32)
     issue = models.CharField('Что случилось', max_length=500, blank=True)
@@ -126,6 +134,8 @@ class ServiceRequest(models.Model):
     )
     assigned_at = models.DateTimeField('Передана мастеру', blank=True, null=True)
     work_started_at = models.DateTimeField('Мастер начал работу', blank=True, null=True)
+    callback_requested_at = models.DateTimeField('Клиент запросил звонок', blank=True, null=True)
+    cancel_requested_at = models.DateTimeField('Клиент запросил отмену', blank=True, null=True)
     completion_status = models.CharField(
         'Статус завершения',
         max_length=16,
@@ -140,6 +150,7 @@ class ServiceRequest(models.Model):
         null=True,
     )
     completion_comment = models.TextField('Комментарий модератору', blank=True)
+    completion_rejection_reason = models.TextField('Что исправить в отчёте', blank=True)
     master_share_percent = models.DecimalField(
         'Доля мастера, %', max_digits=5, decimal_places=2, default=40,
         validators=[MinValueValidator(0), MaxValueValidator(100)],
@@ -172,6 +183,10 @@ class ServiceRequest(models.Model):
         return f'{self.full_name} ({self.phone})'
 
     @property
+    def public_number(self):
+        return f'SG-{self.pk:06d}'
+
+    @property
     def total_price(self):
         works = list(self.works.all())
         extras = sum((item.price for item in self.extra_works.all()), 0)
@@ -188,6 +203,87 @@ class ServiceRequest(models.Model):
     def freeze_amounts(self):
         self.approved_total = self.total_price
         self.approved_payout = (Decimal(self.approved_total) * self.master_share_percent / 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+
+
+class ServiceRequestEvent(models.Model):
+    class Event(models.TextChoices):
+        CREATED = 'created', 'Заявка создана'
+        CALLBACK_REQUESTED = 'callback_requested', 'Клиент запросил звонок'
+        CANCEL_REQUESTED = 'cancel_requested', 'Клиент запросил отмену'
+        CLAIMED = 'claimed', 'Заявка принята мастером'
+        STARTED = 'started', 'Работа начата'
+        ASSIGNED = 'assigned', 'Мастер назначен'
+        REASSIGNED = 'reassigned', 'Мастер переназначен'
+        EXTRA_WORK = 'extra_work', 'Дополнительная работа согласована'
+        COMPLETION_SUBMITTED = 'completion_submitted', 'Отчёт отправлен'
+        COMPLETION_APPROVED = 'completion_approved', 'Отчёт принят'
+        COMPLETION_REJECTED = 'completion_rejected', 'Отчёт возвращён'
+        PAYMENT_RECORDED = 'payment_recorded', 'Оплата учтена вручную'
+
+    service_request = models.ForeignKey(
+        ServiceRequest,
+        on_delete=models.CASCADE,
+        related_name='events',
+        verbose_name='Заявка',
+    )
+    event = models.CharField('Событие', max_length=32, choices=Event.choices)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='service_request_events',
+        null=True,
+        blank=True,
+        verbose_name='Кто выполнил',
+    )
+    from_state = models.CharField('Состояние до', max_length=32, blank=True)
+    to_state = models.CharField('Состояние после', max_length=32, blank=True)
+    metadata = models.JSONField('Безопасные детали', default=dict, blank=True)
+    created_at = models.DateTimeField('Время', auto_now_add=True)
+
+    class Meta:
+        ordering = ('created_at', 'pk')
+        verbose_name = 'Событие заявки'
+        verbose_name_plural = 'История заявок'
+
+
+class ClientNotification(models.Model):
+    class Event(models.TextChoices):
+        CREATED = 'created', 'Заявка создана'
+        ASSIGNED = 'assigned', 'Мастер назначен'
+        STARTED = 'started', 'Работа начата'
+        COMPLETED = 'completed', 'Работа завершена'
+        CANCEL_REQUESTED = 'cancel_requested', 'Запрошена отмена'
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Ожидает отправки'
+        SENDING = 'sending', 'Отправляется'
+        SENT = 'sent', 'Отправлено'
+        FAILED = 'failed', 'Ошибка, будет повторено'
+        DEAD = 'dead', 'Не доставлено'
+
+    service_request = models.ForeignKey(
+        ServiceRequest,
+        on_delete=models.CASCADE,
+        related_name='client_notifications',
+        verbose_name='Заявка',
+    )
+    event = models.CharField('Событие', max_length=32, choices=Event.choices)
+    dedupe_key = models.CharField('Ключ события', max_length=120, unique=True)
+    channel = models.CharField('Канал', max_length=16, default='sms')
+    destination = models.CharField('Получатель', max_length=32)
+    template_version = models.CharField('Версия шаблона', max_length=20, default='1')
+    status = models.CharField('Статус', max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True)
+    attempts = models.PositiveSmallIntegerField('Попыток', default=0)
+    next_attempt_at = models.DateTimeField('Следующая попытка', default=timezone.now, db_index=True)
+    sent_at = models.DateTimeField('Отправлено', null=True, blank=True)
+    last_error = models.CharField('Последняя ошибка', max_length=240, blank=True)
+    created_at = models.DateTimeField('Создано', auto_now_add=True)
+    updated_at = models.DateTimeField('Обновлено', auto_now=True)
+
+    class Meta:
+        ordering = ('created_at',)
+        verbose_name = 'Уведомление клиенту'
+        verbose_name_plural = 'Уведомления клиентам'
 
 
 class CompletionMedia(models.Model):
@@ -225,6 +321,8 @@ class ExtraWork(models.Model):
     name = models.CharField('Дополнительная работа', max_length=180)
     price = models.DecimalField('Стоимость, ₽', max_digits=10, decimal_places=0)
     added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    consent_method = models.CharField('Как согласовано с клиентом', max_length=16, choices=(('phone', 'Устно по телефону'),), blank=True)
+    consented_at = models.DateTimeField('Согласовано с клиентом', null=True, blank=True)
     created_at = models.DateTimeField('Добавлена', auto_now_add=True)
 
     class Meta:
@@ -255,3 +353,35 @@ class PushSubscription(models.Model):
 
     def __str__(self):
         return f'{self.user} — {self.endpoint[:48]}'
+
+
+class PublicRequestRateBucket(models.Model):
+    fingerprint = models.CharField(max_length=64)
+    window_started_at = models.DateTimeField()
+    attempts = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=('fingerprint', 'window_started_at'),
+                name='unique_public_request_rate_bucket',
+            ),
+        ]
+        indexes = [models.Index(fields=('window_started_at',))]
+
+
+class ProductMetric(models.Model):
+    class Event(models.TextChoices):
+        QUOTE_STARTED = 'quote_started', 'Быстрая форма начата'
+        CATALOG_STARTED = 'catalog_started', 'Каталог открыт'
+        CONTACTS_OPENED = 'contacts_opened', 'Контакты открыты'
+        REQUEST_CREATED = 'request_created', 'Заявка создана'
+
+    day = models.DateField()
+    event = models.CharField(max_length=24, choices=Event.choices)
+    count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=('day', 'event'), name='unique_product_metric_day_event'),
+        ]

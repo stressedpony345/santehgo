@@ -22,3 +22,5 @@ node_modules/
 .pnpm-store/
 playwright-report/
 test-results/
+data/
+backups/

@@ -63,3 +63,47 @@ jobs:
 
       - name: Build Docker image
         run: docker build --tag santehgo:ci .
+
+  backup-restore:
+    name: Backup and restore drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      POSTGRES_PASSWORD: ci-restore-password-9b87c24e
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+      LEGAL_PAGES_REQUIRED: "false"
+      CLIENT_NOTIFICATIONS_ENABLED: "false"
+      BACKUP_DIR: ./backups
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Start PostgreSQL and build the app
+        run: |
+          docker compose up -d db
+          docker compose build web backup
+
+      - name: Create representative database and media data
+        run: >-
+          docker compose run --rm web python manage.py shell -c
+          "from django.core.files.base import ContentFile;
+          from core.models import Category, SubCategory, ServiceRequest, CompletionMedia;
+          category=Category.objects.create(name='Backup CI', slug='backup-ci');
+          service=SubCategory.objects.create(category=category, name='Backup service', approximate_price=1000);
+          request=ServiceRequest.objects.create(phone='+79000000000');
+          request.subcategories.add(service);
+          CompletionMedia.objects.create(service_request=request, kind='photo', file=ContentFile(b'backup-ci-media', name='backup-ci.txt'))"
+
+      - name: Create and restore a verified backup
+        run: |
+          if docker compose --profile ops run --rm --entrypoint /bin/sh backup -c 'exec 9>/backups/.backup.flock; flock -n 9; kill -9 $$'; then
+            echo "Interrupted backup simulation unexpectedly succeeded" >&2
+            exit 1
+          fi
+          docker compose --profile ops run --rm backup /scripts/backup.sh
+          docker compose --profile ops run --rm backup /scripts/restore-drill.sh latest
+
+      - name: Stop drill services
+        if: always()
+        run: docker compose --profile ops down --volumes --remove-orphans

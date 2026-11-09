@@ -17,6 +17,7 @@ if [ -z "${DJANGO_SECRET_KEY:-}" ]; then
     export DJANGO_SECRET_KEY
 fi
 
+python manage.py check --deploy
 python manage.py migrate --noinput
 
 if [ -f /app/deploy-data.json ]; then
@@ -24,6 +25,10 @@ if [ -f /app/deploy-data.json ]; then
     if [ "$object_count" = "0" ]; then
         python manage.py loaddata /app/deploy-data.json
     fi
+fi
+
+if [ "$#" -gt 0 ]; then
+    exec "$@"
 fi
 
 python manage.py collectstatic --noinput --clear

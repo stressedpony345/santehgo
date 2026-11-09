@@ -3,8 +3,13 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('health/ready/', views.readiness, name='readiness'),
     path('', views.home, name='home'),
+    path('personal-data-consent/', views.personal_data_consent, name='personal_data_consent'),
     path('request-success/', views.request_success, name='request_success'),
+    path('request/<uuid:public_token>/', views.request_status, name='request_status'),
+    path('request/<uuid:public_token>/callback/', views.request_callback, name='request_callback'),
+    path('request/<uuid:public_token>/cancel/', views.request_cancel, name='request_cancel'),
     path('masters/login/', views.master_login, name='master_login'),
     path('masters/logout/', views.master_logout, name='master_logout'),
     path('masters/', views.master_dashboard, name='master_dashboard'),
@@ -28,5 +33,6 @@ urlpatterns = [
     path('masters/profile/password/', views.master_change_password, name='master_change_password'),
     path('api/categories/', views.categories_api, name='categories_api'),
     path('api/address-suggestions/', views.address_suggestions, name='address_suggestions'),
+    path('api/product-events/', views.product_event, name='product_event'),
     path('api/requests/', views.create_request, name='create_request'),
 ]

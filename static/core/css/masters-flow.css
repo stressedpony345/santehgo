@@ -1,5 +1,5 @@
 .mine-filters{display:flex;gap:6px;overflow-x:auto;margin:0 0 18px;padding:3px 0 8px;scrollbar-width:thin}
-.mine-filters button{display:flex;align-items:center;gap:8px;flex:0 0 auto;min-height:42px;padding:0 13px;border:1px solid rgba(174,220,245,.22);border-radius:8px;background:rgba(255,255,255,.05);color:#b5d4e4;font:700 12px "Manrope";cursor:pointer}
+.mine-filters button{display:flex;align-items:center;gap:8px;flex:0 0 auto;min-height:44px;padding:0 13px;border:1px solid rgba(174,220,245,.22);border-radius:8px;background:rgba(255,255,255,.05);color:#b5d4e4;font:700 12px "Manrope";cursor:pointer}
 .mine-filters button.is-active{border-color:#4cc6ef;background:#1c769e;color:#fff}
 .mine-filters span{display:grid;place-items:center;min-width:21px;height:21px;padding:0 5px;border-radius:5px;background:rgba(255,255,255,.14);font-size:11px}
 .request-card__status.is-active{color:#78d6ff}
@@ -13,4 +13,14 @@
 .request-card__actions:has(>button:only-child) .request-card__details{flex:1}
 .request-card{cursor:pointer}
 .request-card__payout{margin:6px 0 0}
-@media(max-width:550px){.mine-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.mine-filters button{justify-content:space-between;min-width:0;min-height:40px;padding:0 10px;font-size:11px}.request-card__id{max-width:120px;text-align:right}.request-card__status{white-space:normal}.request-card__actions button{min-width:0;padding:0 9px;font-size:12px}.detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item{min-width:0;padding:11px}.detail-item strong{overflow-wrap:anywhere;font-size:13px}.detail-price{font-size:30px}.detail-price small{display:block;margin-top:4px}}
+@media(max-width:550px){.mine-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.mine-filters button{justify-content:space-between;min-width:0;min-height:44px;padding:0 10px;font-size:11px}.request-card__id{max-width:120px;text-align:right}.request-card__status{white-space:normal}.request-card__actions button{min-width:44px;padding:0 9px;font-size:12px}.detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-item{min-width:0;padding:11px}.detail-item strong{overflow-wrap:anywhere;font-size:13px}.detail-price{font-size:30px}.detail-price small{display:block;margin-top:4px}}
+[data-demo-finance="false"] .payment-panel { display: none !important; }
+.master-app button{min-height:44px}
+.dialog-close,.notify-button,.pwa-install__dismiss{min-width:44px}
+.completion-files{display:grid;gap:8px;margin:10px 0}
+.completion-file{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid rgba(174,220,245,.2);border-radius:8px;background:rgba(255,255,255,.05)}
+.completion-file span{display:grid;min-width:0}.completion-file strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.completion-file small{color:#9fc3d6}
+.completion-file button{flex:0 0 auto;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:transparent;color:#fff;cursor:pointer}
+#completion-progress{display:block;width:100%;height:10px;margin:12px 0 6px;accent-color:#ff8124}
+.completion-status{min-height:20px;margin:0 0 12px;color:#b5d4e4;font-size:12px;line-height:1.5}
+.queue-search{display:grid;gap:6px;margin:0 0 16px}.queue-search span{color:#a9c8d9;font-size:12px;font-weight:700}.queue-search input{min-height:48px;width:100%;border:1px solid rgba(174,220,245,.25);border-radius:9px;background:rgba(255,255,255,.06);padding:0 14px;color:#fff;font:600 15px "Manrope"}.queue-search input::placeholder{color:#83a8bc}

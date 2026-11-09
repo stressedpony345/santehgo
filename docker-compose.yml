@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: "${POSTGRES_DB:-santehgo}"
       POSTGRES_USER: "${POSTGRES_USER:-santehgo}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-change-this-password}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,7 +19,8 @@ services:
     restart: unless-stopped
     environment:
       DJANGO_DEBUG: "false"
-      DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:-*}"
+      DJANGO_PRODUCTION: "true"
+      DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS in .env}"
       DJANGO_CSRF_TRUSTED_ORIGINS: "${DJANGO_CSRF_TRUSTED_ORIGINS:-}"
       DJANGO_MEDIA_ROOT: /app/media
       GUNICORN_WORKERS: "${GUNICORN_WORKERS:-2}"
@@ -27,8 +28,31 @@ services:
       POSTGRES_PORT: "5432"
       POSTGRES_DB: "${POSTGRES_DB:-santehgo}"
       POSTGRES_USER: "${POSTGRES_USER:-santehgo}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-change-this-password}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
       DADATA_API_TOKEN: "${DADATA_API_TOKEN:-}"
+      LEGAL_OPERATOR_NAME: "${LEGAL_OPERATOR_NAME:-}"
+      LEGAL_OPERATOR_TAX_ID: "${LEGAL_OPERATOR_TAX_ID:-}"
+      LEGAL_OPERATOR_REGISTRATION_ID: "${LEGAL_OPERATOR_REGISTRATION_ID:-}"
+      LEGAL_OPERATOR_ADDRESS: "${LEGAL_OPERATOR_ADDRESS:-}"
+      LEGAL_CONTACT_EMAIL: "${LEGAL_CONTACT_EMAIL:-}"
+      LEGAL_CONTACT_PHONE: "${LEGAL_CONTACT_PHONE:-8 (908) 705-35-85}"
+      PERSONAL_DATA_CONSENT_VERSION: "${PERSONAL_DATA_CONSENT_VERSION:-2026-11-05}"
+      PERSONAL_DATA_CONSENT_EFFECTIVE_DATE: "${PERSONAL_DATA_CONSENT_EFFECTIVE_DATE:-}"
+      LEGAL_PAGES_REQUIRED: "${LEGAL_PAGES_REQUIRED:-true}"
+      CLIENT_NOTIFICATIONS_ENABLED: "${CLIENT_NOTIFICATIONS_ENABLED:-false}"
+      CLIENT_NOTIFICATION_WEBHOOK_URL: "${CLIENT_NOTIFICATION_WEBHOOK_URL:-}"
+      CLIENT_NOTIFICATION_TOKEN: "${CLIENT_NOTIFICATION_TOKEN:-}"
+      CLIENT_NOTIFICATION_TIMEOUT: "${CLIENT_NOTIFICATION_TIMEOUT:-5}"
+      DEMO_FINANCE_ENABLED: "${DEMO_FINANCE_ENABLED:-false}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-https://xn--80agf5ahnjz.xn--p1ai}"
+      PUBLIC_CLIENT_IP_HEADER: "HTTP_X_REAL_IP"
+      PUBLIC_REQUEST_RATE_LIMIT: "${PUBLIC_REQUEST_RATE_LIMIT:-5}"
+      PUBLIC_REQUEST_RATE_WINDOW_SECONDS: "${PUBLIC_REQUEST_RATE_WINDOW_SECONDS:-300}"
+      MAX_COMPLETION_IMAGE_PIXELS: "${MAX_COMPLETION_IMAGE_PIXELS:-40000000}"
+      ERROR_ALERTS_ENABLED: "${ERROR_ALERTS_ENABLED:-false}"
+      ERROR_ALERT_WEBHOOK_URL: "${ERROR_ALERT_WEBHOOK_URL:-}"
+      ERROR_ALERT_TOKEN: "${ERROR_ALERT_TOKEN:-}"
+      ERROR_ALERT_TIMEOUT: "${ERROR_ALERT_TIMEOUT:-3}"
     depends_on:
       db:
         condition: service_healthy
@@ -37,11 +61,64 @@ services:
       - media_files:/app/media
       - static_files:/app/staticfiles
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3)"]
+      test: ["CMD", "python", "-c", "import os, urllib.request; host=os.environ['DJANGO_ALLOWED_HOSTS'].split(',')[0].strip(); urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/health/ready/', headers={'Host':host,'X-Forwarded-Proto':'https'}), timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  notifications:
+    build: .
+    restart: unless-stopped
+    command: ["sh", "-c", "while true; do python manage.py send_client_notifications --limit 50; sleep 30; done"]
+    environment:
+      DJANGO_DEBUG: "false"
+      DJANGO_PRODUCTION: "true"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "${POSTGRES_DB:-santehgo}"
+      POSTGRES_USER: "${POSTGRES_USER:-santehgo}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+      LEGAL_OPERATOR_NAME: "${LEGAL_OPERATOR_NAME:-}"
+      PERSONAL_DATA_CONSENT_VERSION: "${PERSONAL_DATA_CONSENT_VERSION:-2026-11-05}"
+      PERSONAL_DATA_CONSENT_EFFECTIVE_DATE: "${PERSONAL_DATA_CONSENT_EFFECTIVE_DATE:-}"
+      LEGAL_PAGES_REQUIRED: "${LEGAL_PAGES_REQUIRED:-true}"
+      CLIENT_NOTIFICATIONS_ENABLED: "${CLIENT_NOTIFICATIONS_ENABLED:-false}"
+      CLIENT_NOTIFICATION_WEBHOOK_URL: "${CLIENT_NOTIFICATION_WEBHOOK_URL:-}"
+      CLIENT_NOTIFICATION_TOKEN: "${CLIENT_NOTIFICATION_TOKEN:-}"
+      CLIENT_NOTIFICATION_TIMEOUT: "${CLIENT_NOTIFICATION_TIMEOUT:-5}"
+      DEMO_FINANCE_ENABLED: "${DEMO_FINANCE_ENABLED:-false}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-https://xn--80agf5ahnjz.xn--p1ai}"
+    depends_on:
+      web:
+        condition: service_healthy
+    volumes:
+      - django_data:/app/data
+
+  backup:
+    build:
+      context: .
+      dockerfile: docker/backup.Dockerfile
+    profiles: ["ops"]
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: "${POSTGRES_DB:-santehgo}"
+      PGUSER: "${POSTGRES_USER:-santehgo}"
+      PGPASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+      BACKUP_ROOT: /backups
+      MEDIA_SOURCE: /source/media
+      BACKUP_RETENTION_COUNT: "${BACKUP_RETENTION_COUNT:-14}"
+      RELEASE_SHA: "${RELEASE_SHA:-unknown}"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - media_files:/source/media:ro
+      - "${BACKUP_DIR:-./backups}:/backups"
+      - ./docker:/scripts:ro
+    entrypoint: ["/bin/sh"]
+    command: ["/scripts/backup.sh"]
 
   nginx:
     image: nginx:1.27-alpine

@@ -782,6 +782,10 @@
 
   window.addEventListener('scroll', (event) => {
     if (!activeFloatingOverlay || isFloatingOverlayTarget(activeFloatingOverlay, event.target)) return;
+    if (activeFloatingOverlay.invoker === document.activeElement) {
+      window.requestAnimationFrame(() => activeFloatingOverlay?.position());
+      return;
+    }
     if (Date.now() - activeFloatingOverlay.openedAt < floatingOverlayGracePeriod) {
       window.requestAnimationFrame(() => activeFloatingOverlay?.position());
       return;
@@ -789,17 +793,6 @@
     closeFloatingOverlay(activeFloatingOverlay);
   }, true);
 
-  let mobileInputFocusedAt = 0;
-  document.addEventListener('focusin', (event) => {
-    if (event.target.matches?.('#address-input, .select__search')) mobileInputFocusedAt = Date.now();
-  });
-  window.addEventListener('scroll', (event) => {
-    const active = document.activeElement;
-    if (!active?.matches?.('#address-input, .select__search')) return;
-    if (isFloatingOverlayTarget(activeFloatingOverlay, event.target)) return;
-    if (Date.now() - mobileInputFocusedAt < 500) return;
-    active.blur();
-  }, true);
   const positionActiveFloatingOverlay = () => activeFloatingOverlay?.position();
   window.addEventListener('resize', positionActiveFloatingOverlay);
   window.visualViewport?.addEventListener('resize', positionActiveFloatingOverlay);
@@ -879,6 +872,22 @@
     return match ? decodeURIComponent(match[1]) : '';
   }
 
+  const sentProductEvents = new Set();
+  function reportProductEvent(event) {
+    if (sentProductEvents.has(event)) return;
+    sentProductEvents.add(event);
+    fetch('/api/product-events/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+      body: JSON.stringify({ event }),
+      keepalive: true,
+    }).catch(() => {});
+  }
+
+  quoteForm?.addEventListener('focusin', (event) => {
+    if (event.target.matches?.('input, textarea, select')) reportProductEvent('quote_started');
+  });
+
   const imageByCategory = {
     'Кухня': 'icon-service.svg',
     'Ванная': 'icon-install.svg',
@@ -956,9 +965,18 @@
 
     if (requestSummary) {
       requestSummary.hidden = selected.length === 0;
-      requestSummary.innerHTML = selected.length
-        ? `<strong>Вы выбрали:</strong><ul>${selected.map((work) => `<li>${work.serviceName}: ${work.name} — ${formatPrice(work.price)}</li>`).join('')}</ul>`
-        : '';
+      requestSummary.replaceChildren();
+      if (selected.length) {
+        const title = document.createElement('strong');
+        title.textContent = 'Вы выбрали:';
+        const list = document.createElement('ul');
+        selected.forEach((work) => {
+          const item = document.createElement('li');
+          item.textContent = `${work.serviceName}: ${work.name} — ${formatPrice(work.price)}`;
+          list.appendChild(item);
+        });
+        requestSummary.append(title, list);
+      }
     }
   }
 
@@ -994,6 +1012,8 @@
       button.classList.toggle('is-active', String(category.id) === activeCategoryId);
       button.setAttribute('aria-pressed', String(String(category.id) === activeCategoryId));
       button.addEventListener('click', () => {
+        reportProductEvent('catalog_started');
+        searchInput.value = '';
         activeCategoryId = String(category.id);
         categoryNav.querySelectorAll('.category-nav__item').forEach((item) => {
           const isActive = item.dataset.categoryId === activeCategoryId;
@@ -1121,21 +1141,31 @@
       const isSelected = selectedCount > 0;
       card.className = `service-card${isSelected ? ' is-selected' : ''}`;
       card.innerHTML = `
-        <div class="service-card__media${service.hasCustomImage ? ' has-photo' : ''}">
-          <img src="${service.image}" alt="${service.name}" width="92" height="92">
-          <span class="service-card__category">${service.categoryName}</span>
+        <div class="service-card__media">
+          <img width="92" height="92">
+          <span class="service-card__category"></span>
         </div>
         <div class="service-card__body">
-          <h2 class="service-card__title">${service.name}</h2>
-          <p class="service-card__description">${service.description}</p>
+          <h2 class="service-card__title"></h2>
+          <p class="service-card__description"></p>
           <div class="service-card__footer">
-            <p class="service-card__price"><span>${service.works.length} ${pluralWorks(service.works.length)} · от</span><strong>${formatPrice(serviceMinPrice(service))}</strong></p>
-            <button class="service-card__action" type="button" aria-pressed="${isSelected}">
-              ${isSelected ? `✓ Выбрано: ${selectedCount}` : 'Выбрать работы'}
-            </button>
+            <p class="service-card__price"><span></span><strong></strong></p>
+            <button class="service-card__action" type="button"></button>
           </div>
         </div>
       `;
+      card.querySelector('.service-card__media').classList.toggle('has-photo', service.hasCustomImage);
+      const image = card.querySelector('.service-card__media img');
+      image.src = service.image;
+      image.alt = service.name;
+      card.querySelector('.service-card__category').textContent = service.categoryName;
+      card.querySelector('.service-card__title').textContent = service.name;
+      card.querySelector('.service-card__description').textContent = service.description;
+      card.querySelector('.service-card__price span').textContent = `${service.works.length} ${pluralWorks(service.works.length)} · от`;
+      card.querySelector('.service-card__price strong').textContent = formatPrice(serviceMinPrice(service));
+      const action = card.querySelector('.service-card__action');
+      action.setAttribute('aria-pressed', String(isSelected));
+      action.textContent = isSelected ? `✓ Выбрано: ${selectedCount}` : 'Выбрать работы';
       card.querySelector('.service-card__action').addEventListener('click', (event) => {
         openServicesModal(service, event.currentTarget);
       });
@@ -1149,6 +1179,7 @@
 
   function openModal(modal, invoker = document.activeElement) {
     if (!modal) return;
+    if (modal === modalContacts) reportProductEvent('contacts_opened');
     if (activeFloatingOverlay) closeFloatingOverlay(activeFloatingOverlay);
     modal._returnFocus = invoker instanceof HTMLElement ? invoker : null;
     modal.hidden = false;
@@ -1180,6 +1211,7 @@
   }
 
   function openServicesModal(service, invoker) {
+    reportProductEvent('catalog_started');
     activeService = service;
     modalWorkIds = new Set(
       service.works
@@ -1204,16 +1236,24 @@
       const label = document.createElement('label');
       label.className = 'check-item';
       label.innerHTML = `
-        <input type="checkbox" name="work" value="${work.id}" ${modalWorkIds.has(Number(work.id)) ? 'checked' : ''}>
+        <input type="checkbox" name="work">
         <span class="check-item__body">
-          <span>
-            <span class="check-item__name">${work.name}</span>
-            ${work.description ? `<span class="check-item__description">${work.description}</span>` : ''}
-          </span>
-          <span class="check-item__price">${formatPrice(work.price)}</span>
+          <span><span class="check-item__name"></span></span>
+          <span class="check-item__price"></span>
         </span>
       `;
       const input = label.querySelector('input');
+      input.value = String(work.id);
+      input.checked = modalWorkIds.has(Number(work.id));
+      const name = label.querySelector('.check-item__name');
+      name.textContent = work.name;
+      if (work.description) {
+        const description = document.createElement('span');
+        description.className = 'check-item__description';
+        description.textContent = work.description;
+        name.after(description);
+      }
+      label.querySelector('.check-item__price').textContent = formatPrice(work.price);
       input.addEventListener('change', () => {
         const id = Number(input.value);
         if (input.checked) modalWorkIds.add(id);
@@ -1233,7 +1273,28 @@
   }
 
   searchInput.addEventListener('input', () => {
+    reportProductEvent('catalog_started');
+    if (searchInput.value.trim() && activeCategoryId !== 'all') {
+      activeCategoryId = 'all';
+      categoryNav?.querySelectorAll('.category-nav__item').forEach((item) => {
+        const isActive = item.dataset.categoryId === 'all';
+        item.classList.toggle('is-active', isActive);
+        item.setAttribute('aria-pressed', String(isActive));
+      });
+    }
     renderCatalog();
+  });
+
+  document.getElementById('catalog-empty-reset')?.addEventListener('click', () => {
+    searchInput.value = '';
+    activeCategoryId = 'all';
+    categoryNav?.querySelectorAll('.category-nav__item').forEach((item) => {
+      const isActive = item.dataset.categoryId === 'all';
+      item.classList.toggle('is-active', isActive);
+      item.setAttribute('aria-pressed', String(isActive));
+    });
+    renderCatalog();
+    searchInput.focus();
   });
 
   workListClear?.addEventListener('click', () => {
@@ -1270,6 +1331,48 @@
     updateSelectionUI();
   });
 
+  const pendingRequestStorageKey = 'santehgo.pending-request';
+  const pendingRequestMaxAge = 30 * 60 * 1000;
+  let requestIdempotencyKey = '';
+
+  async function recoverPendingRequest() {
+    let pending;
+    try {
+      pending = JSON.parse(sessionStorage.getItem(pendingRequestStorageKey) || 'null');
+    } catch (_error) {
+      sessionStorage.removeItem(pendingRequestStorageKey);
+      return;
+    }
+    if (!pending?.key || !pending?.payload || !pending?.createdAt
+        || Date.now() - pending.createdAt > pendingRequestMaxAge) {
+      if (pending) sessionStorage.removeItem(pendingRequestStorageKey);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/requests/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken(),
+          'Idempotency-Key': pending.key,
+        },
+        body: pending.payload,
+      });
+      const result = await response.json();
+      if (response.ok && result.ok) {
+        sessionStorage.removeItem(pendingRequestStorageKey);
+        window.location.assign(result.success_url || '/request-success/');
+      } else if (response.status >= 400 && response.status < 500) {
+        sessionStorage.removeItem(pendingRequestStorageKey);
+      }
+    } catch (_error) {
+      // Keep a recent pending request so the next reload can safely replay it.
+    }
+  }
+
+  recoverPendingRequest();
+
   contactsForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     contactsError.hidden = true;
@@ -1288,10 +1391,32 @@
       work_ids: quoteDraft.work_ids.length
         ? quoteDraft.work_ids
         : currentlySelectedWorks.map((work) => Number(work.id)),
+      consent: formData.get('consent') === 'on',
+      company_website: String(formData.get('company_website') || ''),
     };
 
     const submitBtn = contactsForm.querySelector('button[type="submit"]');
+    const submitLabel = submitBtn.textContent;
+    const serializedPayload = JSON.stringify(payload);
+    try {
+      const pending = JSON.parse(sessionStorage.getItem(pendingRequestStorageKey) || 'null');
+      if (pending?.payload === serializedPayload && pending?.key) requestIdempotencyKey = pending.key;
+      else if (pending) requestIdempotencyKey = '';
+    } catch (_error) {
+      sessionStorage.removeItem(pendingRequestStorageKey);
+    }
+    if (!requestIdempotencyKey) {
+      requestIdempotencyKey = globalThis.crypto?.randomUUID?.()
+        || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+    sessionStorage.setItem(pendingRequestStorageKey, JSON.stringify({
+      key: requestIdempotencyKey,
+      payload: serializedPayload,
+      createdAt: Date.now(),
+    }));
     submitBtn.disabled = true;
+    submitBtn.textContent = 'Отправляем…';
+    contactsForm.setAttribute('aria-busy', 'true');
 
     try {
       const response = await fetch('/api/requests/', {
@@ -1299,6 +1424,7 @@
         headers: {
           'Content-Type': 'application/json',
           'X-CSRFToken': csrfToken(),
+          'Idempotency-Key': requestIdempotencyKey,
         },
         body: JSON.stringify(payload),
       });
@@ -1308,12 +1434,17 @@
         throw new Error(result.error || 'Не удалось отправить заявку');
       }
 
+      requestIdempotencyKey = '';
+      sessionStorage.removeItem(pendingRequestStorageKey);
       window.location.assign(result.success_url || '/request-success/');
     } catch (error) {
       contactsError.textContent = error.message || 'Ошибка отправки';
       contactsError.hidden = false;
+      contactsError.focus?.();
     } finally {
       submitBtn.disabled = false;
+      submitBtn.textContent = submitLabel;
+      contactsForm.removeAttribute('aria-busy');
     }
   });
 

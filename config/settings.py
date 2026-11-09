@@ -28,6 +28,7 @@ SECRET_KEY = os.environ.get(
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'true').lower() in ('1', 'true', 'yes')
+PRODUCTION_MODE = os.environ.get('DJANGO_PRODUCTION', 'false').lower() in ('1', 'true', 'yes')
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -41,7 +42,11 @@ CSRF_TRUSTED_ORIGINS = [
     if origin.strip()
 ]
 
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https') if PRODUCTION_MODE else None
+SESSION_COOKIE_SECURE = PRODUCTION_MODE
+CSRF_COOKIE_SECURE = PRODUCTION_MODE
+SECURE_SSL_REDIRECT = PRODUCTION_MODE
+SECURE_HSTS_SECONDS = 31536000 if PRODUCTION_MODE else 0
 
 
 # Application definition
@@ -154,6 +159,31 @@ MEDIA_ROOT = Path(os.environ.get('DJANGO_MEDIA_ROOT', BASE_DIR / 'media'))
 # Server-side token for address suggestions. Never expose it in templates or JS.
 DADATA_API_TOKEN = os.environ.get('DADATA_API_TOKEN', '')
 
+# Public legal identity. Keep blank until the owner-approved production values are known.
+LEGAL_OPERATOR_NAME = os.environ.get('LEGAL_OPERATOR_NAME', '')
+LEGAL_OPERATOR_TAX_ID = os.environ.get('LEGAL_OPERATOR_TAX_ID', '')
+LEGAL_OPERATOR_REGISTRATION_ID = os.environ.get('LEGAL_OPERATOR_REGISTRATION_ID', '')
+LEGAL_OPERATOR_ADDRESS = os.environ.get('LEGAL_OPERATOR_ADDRESS', '')
+LEGAL_CONTACT_EMAIL = os.environ.get('LEGAL_CONTACT_EMAIL', '')
+LEGAL_CONTACT_PHONE = os.environ.get('LEGAL_CONTACT_PHONE', '8 (908) 705-35-85')
+PERSONAL_DATA_CONSENT_VERSION = os.environ.get('PERSONAL_DATA_CONSENT_VERSION', '2026-11-05')
+PERSONAL_DATA_CONSENT_EFFECTIVE_DATE = os.environ.get('PERSONAL_DATA_CONSENT_EFFECTIVE_DATE', '')
+LEGAL_PAGES_REQUIRED = os.environ.get('LEGAL_PAGES_REQUIRED', 'false').lower() in {'1', 'true', 'yes'}
+CLIENT_NOTIFICATIONS_ENABLED = os.environ.get('CLIENT_NOTIFICATIONS_ENABLED', 'false').lower() in {'1', 'true', 'yes'}
+CLIENT_NOTIFICATION_WEBHOOK_URL = os.environ.get('CLIENT_NOTIFICATION_WEBHOOK_URL', '')
+CLIENT_NOTIFICATION_TOKEN = os.environ.get('CLIENT_NOTIFICATION_TOKEN', '')
+CLIENT_NOTIFICATION_TIMEOUT = float(os.environ.get('CLIENT_NOTIFICATION_TIMEOUT', '5'))
+PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL', '')
+DEMO_FINANCE_ENABLED = os.environ.get('DEMO_FINANCE_ENABLED', 'false').lower() in {'1', 'true', 'yes'}
+PUBLIC_REQUEST_RATE_LIMIT = int(os.environ.get('PUBLIC_REQUEST_RATE_LIMIT', '5'))
+PUBLIC_REQUEST_RATE_WINDOW_SECONDS = int(os.environ.get('PUBLIC_REQUEST_RATE_WINDOW_SECONDS', '300'))
+PUBLIC_CLIENT_IP_HEADER = os.environ.get('PUBLIC_CLIENT_IP_HEADER', 'REMOTE_ADDR')
+MAX_COMPLETION_IMAGE_PIXELS = int(os.environ.get('MAX_COMPLETION_IMAGE_PIXELS', '40000000'))
+ERROR_ALERTS_ENABLED = os.environ.get('ERROR_ALERTS_ENABLED', 'false').lower() in {'1', 'true', 'yes'}
+ERROR_ALERT_WEBHOOK_URL = os.environ.get('ERROR_ALERT_WEBHOOK_URL', '')
+ERROR_ALERT_TOKEN = os.environ.get('ERROR_ALERT_TOKEN', '')
+ERROR_ALERT_TIMEOUT = float(os.environ.get('ERROR_ALERT_TIMEOUT', '3'))
+
 LOGIN_URL = '/masters/login/'
 MASTER_VAPID_KEY_PATH = Path(os.environ.get('MASTER_VAPID_KEY_PATH', BASE_DIR / 'data' / 'vapid_private.pem'))
 MASTER_VAPID_SUBJECT = os.environ.get('MASTER_VAPID_SUBJECT', 'mailto:admin@santehgo.ru')
@@ -165,5 +195,23 @@ MASTER_VAPID_SUBJECT = os.environ.get('MASTER_VAPID_SUBJECT', 'mailto:admin@sant
 MAILERS = {
     'default': {
         'BACKEND': 'django.core.mail.backends.smtp.EmailBackend',
+    },
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'error_alert': {
+            'class': 'core.monitoring.ErrorAlertHandler',
+            'level': 'ERROR',
+        },
+    },
+    'loggers': {
+        'django.request': {
+            'handlers': ['error_alert'],
+            'level': 'ERROR',
+            'propagate': True,
+        },
     },
 }

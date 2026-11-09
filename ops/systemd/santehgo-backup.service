@@ -1,0 +1,14 @@
+[Unit]
+Description=SantehGo verified PostgreSQL and media backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/santehgo/current
+ExecStart=/usr/bin/docker compose --project-name santehgo --env-file /opt/santehgo/.env -f /opt/santehgo/current/docker-compose.yml --profile ops run --rm backup /scripts/backup.sh
+ExecStartPost=/opt/santehgo/current/docker/offsite-sync.sh
+EnvironmentFile=/etc/santehgo-backup.env
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

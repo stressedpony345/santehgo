@@ -1,7 +1,66 @@
 import { expect, test } from '../fixtures/playwright';
 
+test('прокрутка с мобильной клавиатурой не снимает фокус с адреса', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/');
+  const address = page.locator('#address-input');
+  await address.focus();
+  await page.clock.fastForward(600);
+  await page.evaluate(() => window.dispatchEvent(new Event('scroll')));
+  await expect(address).toBeFocused();
+});
+
+test('быстрый расчёт не обещает точную стоимость до уточнения деталей', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.quote__text')).toContainText('предварительный ориентир');
+});
+
+test('у быстрой формы доступно согласие без обещания отсутствия передачи данных', async ({ page }) => {
+  await page.goto('/');
+  const notice = page.locator('.quote__secure');
+  await expect(notice).not.toContainText('не передаются третьим лицам');
+  await expect(notice.getByRole('link', { name: 'Условия обработки' })).toHaveAttribute('href', '/personal-data-consent/');
+});
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
+});
+
+test('начало быстрой формы отправляет только код события без адреса', async ({ page }) => {
+  const events: unknown[] = [];
+  await page.route('**/api/product-events/', async (route) => {
+    events.push(route.request().postDataJSON());
+    await route.continue();
+  });
+
+  const response = page.waitForResponse((item) => item.url().endsWith('/api/product-events/'));
+  await page.locator('#address-input').fill('Личный адрес клиента');
+
+  await expect.poll(() => events).toEqual([{ event: 'quote_started' }]);
+  expect([204, 429]).toContain((await response).status());
+});
+
+test('открытие контактов учитывается без передачи полей формы', async ({ page }) => {
+  const events: unknown[] = [];
+  await page.route('**/api/product-events/', async (route) => {
+    events.push(route.request().postDataJSON());
+    await route.fulfill({ status: 204 });
+  });
+
+  await page.locator('#quote-form').getByRole('button', { name: 'Оставить заявку' }).click();
+
+  await expect.poll(() => events).toEqual([{ event: 'contacts_opened' }]);
+});
+
+test('прокрутка мобильного экрана не закрывает поиск при активном поле', async ({ page }) => {
+  await page.clock.install();
+  const search = page.locator('.select__search');
+  await search.focus();
+  await page.clock.fastForward(600);
+  await page.evaluate(() => window.dispatchEvent(new Event('scroll')));
+
+  await expect(page.locator('.select__menu--search')).toBeVisible();
+  await expect(search).toBeFocused();
 });
 
 test('главная не создаёт горизонтальную прокрутку', async ({ page }) => {

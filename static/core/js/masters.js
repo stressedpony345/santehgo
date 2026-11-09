@@ -1,12 +1,17 @@
 (() => {
-  const state = { available: [], mine: [], mineFilter: 'active', latestId: 0, initialized: false };
+  const demoFinanceEnabled = document.body.dataset.demoFinance === 'true';
+  const state = { available: [], availableQuery: '', mine: [], mineFilter: 'active', latestId: 0, initialized: false };
   const availableList = document.getElementById('available-list');
   const mineList = document.getElementById('mine-list');
   const dialog = document.getElementById('request-dialog');
   const dialogContent = document.getElementById('dialog-content');
   const completionDialog = document.getElementById('completion-dialog');
   const completionForm = document.getElementById('completion-form');
+  const completionFiles = document.getElementById('completion-files');
+  const completionProgress = document.getElementById('completion-progress');
+  const completionStatus = document.getElementById('completion-status');
   const toast = document.getElementById('app-toast');
+  const reportDraft = { requestId: null, photos: [], videos: [] };
 
   const csrf = () => document.cookie.match(/(?:^|; )csrftoken=([^;]+)/)?.[1] || '';
   const money = (value) => new Intl.NumberFormat('ru-RU').format(value || 0) + ' ₽';
@@ -25,7 +30,10 @@
   }
 
   function stage(item) {
-    if (item.completion_status === 'approved') return item.payment_confirmed_at && (item.payment_method !== 'cash' || item.cash_status === 'confirmed') ? 'done' : 'payment';
+    if (item.completion_status === 'approved') {
+      if (!demoFinanceEnabled) return item.payment_confirmed_at ? 'done' : 'review';
+      return item.payment_confirmed_at && (item.payment_method !== 'cash' || item.cash_status === 'confirmed') ? 'done' : 'payment';
+    }
     if (item.completion_status === 'pending') return 'review';
     return 'active';
   }
@@ -34,6 +42,7 @@
     if (item.completion_status === 'rejected') return 'Отчёт отклонён';
     if (item.completion_status === 'pending') return 'На проверке';
     if (item.completion_status === 'approved') {
+      if (!demoFinanceEnabled) return item.payment_confirmed_at ? 'Оплата учтена диспетчером' : 'Ожидает отметки оплаты';
       if (item.payment_confirmed_at) return item.payment_method === 'cash' && item.cash_status !== 'confirmed' ? 'Сдача наличных' : 'Оплачена · тест';
       return item.payment_method === 'unset' ? 'Выбор оплаты' : 'Ожидает оплаты';
     }
@@ -42,7 +51,7 @@
 
   function card(item, mine = false) {
     const completionLabel = mine ? `<i class="request-card__status is-${stage(item)}">${stageLabel(item)}</i>` : '';
-    const nextAction = item.completion_status === 'approved' ? stage(item) === 'done' ? '' : 'Открыть оплату'
+    const nextAction = item.completion_status === 'approved' ? (!demoFinanceEnabled || stage(item) === 'done' ? '' : 'Открыть оплату')
       : item.completion_status === 'pending' ? ''
       : !item.work_started_at && item.completion_status === 'none' ? 'Начать работу'
       : item.completion_status === 'rejected' ? 'Повторить отчёт' : 'Сдать отчёт';
@@ -66,7 +75,10 @@
   }
 
   function render() {
-    availableList.replaceChildren(...state.available.map((item) => card(item)));
+    const query = state.availableQuery.toLocaleLowerCase('ru-RU');
+    const available = state.available.filter((item) => !query || [item.id, item.issue, item.preferred_time, workNames(item)]
+      .some((value) => String(value || '').toLocaleLowerCase('ru-RU').includes(query)));
+    availableList.replaceChildren(...available.map((item) => card(item)));
     const visible = state.mine.filter((item) => stage(item) === state.mineFilter);
     mineList.replaceChildren(...visible.map((item) => card(item, true)));
     document.querySelectorAll('[data-filter-count]').forEach((count) => {
@@ -76,7 +88,7 @@
     document.getElementById('mine-count').textContent = state.mine.length;
     document.getElementById('nav-badge').textContent = state.available.length;
     document.getElementById('nav-badge').hidden = !state.available.length;
-    document.getElementById('available-empty').hidden = Boolean(state.available.length);
+    document.getElementById('available-empty').hidden = Boolean(available.length);
     document.getElementById('mine-empty').hidden = Boolean(visible.length);
   }
 
@@ -97,7 +109,8 @@
     state.initialized = true;
     document.getElementById('master-name').textContent = data.master.name;
     render();
-    if (!document.querySelector('[data-view="income"]').hidden) loadEarnings();
+    const incomeView = document.querySelector('[data-view="income"]');
+    if (incomeView && !incomeView.hidden) loadEarnings();
   }
 
   function findRequest(id) {
@@ -128,6 +141,7 @@
           <div class="extra-work-results" data-work-results role="listbox"></div>
           <label>Название работы<input name="name" maxlength="180" required placeholder="Что нужно сделать"></label>
           <label>Стоимость, ₽<input name="price" type="number" min="1" max="9999999999" step="1" required inputmode="numeric"></label>
+          <label><input name="consent_confirmed" type="checkbox" required> Клиент согласовал эту работу и цену по телефону</label>
           <button type="submit">Добавить к заявке</button>
         </form>` : ''}
       ${item.assigned_to && item.completion_status === 'none' && !item.work_started_at ? `<button class="detail-primary" type="button" data-start="${item.id}">Начать работу</button>` : ''}
@@ -135,6 +149,7 @@
       ${item.assigned_to && item.work_started_at && ['none', 'rejected'].includes(item.completion_status) ? `<button class="detail-primary" type="button" data-complete="${item.id}">${item.completion_status === 'rejected' ? 'Отправить исправленный отчёт' : 'Сдать отчёт'}</button>` : ''}
       ${item.completion_status === 'approved' ? `<div class="payment-panel"><h3>Оплата · тестовый режим</h3>${item.payment_method === 'unset' ? `<p>Уточните у клиента способ оплаты. Выбор способа не отмечает оплату.</p><div class="payment-actions"><button type="button" data-payment="${item.id}" data-method="qr">QR</button><button type="button" data-payment="${item.id}" data-method="cash">Наличные</button><button type="button" disabled title="Пока не подключён">Безнал</button></div>` : `<p>${item.payment_method === 'cash' ? 'Наличные' : 'QR'} · ${money(item.approved_total ?? item.price)}</p>${item.payment_method === 'qr' ? `<div class="demo-qr"><img src="/masters/api/requests/${item.id}/payment/qr/" alt="Тестовый QR для заявки № ${item.id}" loading="lazy"><small>Демонстрационный QR. Реальная оплата через него недоступна.</small></div>` : ''}${!item.payment_confirmed_at ? `<button type="button" data-confirm-payment="${item.id}">${item.payment_method === 'cash' ? 'Наличные получены' : 'Клиент оплатил · тест'}</button>` : `<p>Оплата отмечена ${escapeHtml(item.payment_confirmed_at)} · тест</p>`}${item.payment_method === 'cash' && item.payment_confirmed_at ? `<p>Доля компании к сдаче: ${money(item.cash_due)} до ${escapeHtml(item.cash_due_at)}. Доля мастера ${money(item.approved_payout)} остаётся у вас.</p><p>Сдача: ${item.cash_status === 'confirmed' ? 'подтверждена модератором' : item.cash_status === 'reported' ? 'ожидает подтверждения модератора' : 'ожидается'}</p>${item.cash_status === 'due' ? `<button type="button" data-report-cash="${item.id}">Сообщить о сдаче наличных</button>` : ''}` : ''}`}</div>` : ''}
       ${item.completion_status !== 'none' && item.completion_comment ? `<div class="detail-list"><h3>Комментарий модератору</h3><p>${escapeHtml(item.completion_comment)}</p></div>` : ''}
+      ${item.completion_status === 'rejected' && item.completion_rejection_reason ? `<div class="detail-list is-warning"><h3>Что нужно исправить</h3><p>${escapeHtml(item.completion_rejection_reason)}</p></div>` : ''}
       ${item.completion_status !== 'none' && (item.completion_photo || item.completion_media.length) ? `<div class="detail-list"><h3>Материалы выполнения</h3><div class="detail-media">${item.completion_photo ? `<a href="${escapeHtml(item.completion_photo)}" target="_blank" rel="noopener">Фото 1</a>` : ''}${item.completion_media.map((media, index) => `<a href="${escapeHtml(media.url)}" target="_blank" rel="noopener">${media.kind === 'video' ? 'Видео' : 'Фото'} ${index + 2}</a>`).join('')}</div></div>` : ''}
       <a class="detail-phone" href="tel:${escapeHtml(item.phone)}">Позвонить: ${escapeHtml(item.phone)}</a>`;
     if (!dialog.open) dialog.showModal();
@@ -155,34 +170,96 @@
     return data;
   }
 
-  async function submitCompletion(id, form) {
-    const response = await fetch(`/masters/api/requests/${id}/complete/`, {
-      method: 'POST',
-      headers: { 'X-CSRFToken': decodeURIComponent(csrf()) },
-      body: form,
-    });
-    const data = (response.headers.get('content-type') || '').includes('application/json')
-      ? await response.json()
-      : { ok: false, error: 'Сервер временно не может принять фото' };
-    if (!response.ok) throw new Error(data.error || 'Не удалось отправить фото');
-    return data;
+  const reportStorageKey = (id) => `santehgo:completion-draft:${id}`;
+
+  function persistReportComment() {
+    if (!reportDraft.requestId) return;
+    try { localStorage.setItem(reportStorageKey(reportDraft.requestId), completionForm.elements.comment.value); }
+    catch (_) { /* The in-memory draft still survives closing the dialog. */ }
   }
+
+  function renderCompletionFiles() {
+    const rows = [...reportDraft.photos.map((file, index) => ({ file, kind: 'photos', index })),
+      ...reportDraft.videos.map((file, index) => ({ file, kind: 'videos', index }))];
+    completionFiles.innerHTML = rows.map(({ file, kind, index }) => `
+      <div class="completion-file">
+        <span><strong>${escapeHtml(file.name)}</strong><small>${(file.size / 1024 / 1024).toFixed(1)} МБ</small></span>
+        <button type="button" data-remove-file="${kind}:${index}" aria-label="Удалить ${escapeHtml(file.name)}">Удалить</button>
+      </div>`).join('');
+  }
+
+  function submitCompletion(id, formData) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `/masters/api/requests/${id}/complete/`);
+      xhr.setRequestHeader('X-CSRFToken', decodeURIComponent(csrf()));
+      xhr.upload.addEventListener('progress', (event) => {
+        if (!event.lengthComputable) return;
+        const value = Math.round(event.loaded / event.total * 100);
+        completionProgress.value = value;
+        completionStatus.textContent = `Отправка: ${value}%`;
+      });
+      xhr.addEventListener('load', () => {
+        let data = { ok: false, error: 'Сервер временно не может принять отчёт' };
+        try { data = JSON.parse(xhr.responseText); } catch (_) { /* use safe fallback */ }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+        else reject(new Error(data.error || 'Не удалось отправить отчёт'));
+      });
+      xhr.addEventListener('error', () => reject(new Error('Сеть недоступна. Черновик сохранён — попробуйте ещё раз.')));
+      xhr.addEventListener('abort', () => reject(new Error('Отправка отменена. Черновик сохранён.')));
+      xhr.send(formData);
+    });
+  }
+
+  completionForm.elements.photos.addEventListener('change', (event) => {
+    reportDraft.photos = [...event.target.files];
+    renderCompletionFiles();
+  });
+  completionForm.elements.videos.addEventListener('change', (event) => {
+    reportDraft.videos = [...event.target.files];
+    renderCompletionFiles();
+  });
+  completionForm.elements.comment.addEventListener('input', persistReportComment);
+  completionFiles.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-remove-file]');
+    if (!button) return;
+    const [kind, index] = button.dataset.removeFile.split(':');
+    reportDraft[kind].splice(Number(index), 1);
+    completionForm.elements[kind].value = '';
+    renderCompletionFiles();
+  });
+  document.getElementById('available-search').addEventListener('input', (event) => {
+    state.availableQuery = event.target.value.trim();
+    render();
+  });
 
   completionForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!window.confirm('Отправить отчёт модератору? После отправки состав работ нельзя будет менять.')) return;
     const button = completionForm.querySelector('[type=submit]');
-    const photos = completionForm.elements.photos.files;
-    const videos = completionForm.elements.videos.files;
+    const photos = reportDraft.photos;
+    const videos = reportDraft.videos;
     if (photos.length < 1 || photos.length > 6 || videos.length > 2 || [...photos].some((file) => file.size > 10 * 1024 * 1024) || [...videos].some((file) => file.size > 50 * 1024 * 1024) || [...photos, ...videos].reduce((sum, file) => sum + file.size, 0) > 120 * 1024 * 1024) {
       showToast('Проверьте количество и размеры файлов'); return;
     }
     button.disabled = true;
+    completionProgress.value = 0;
+    completionStatus.textContent = 'Подготавливаем отчёт к отправке…';
     try {
-      await submitCompletion(completionForm.dataset.requestId, new FormData(completionForm));
+      const formData = new FormData();
+      photos.forEach((file) => formData.append('photos', file));
+      videos.forEach((file) => formData.append('videos', file));
+      formData.append('comment', completionForm.elements.comment.value);
+      await submitCompletion(completionForm.dataset.requestId, formData);
+      try { localStorage.removeItem(reportStorageKey(completionForm.dataset.requestId)); } catch (_) {}
+      reportDraft.photos = [];
+      reportDraft.videos = [];
+      completionForm.reset();
+      renderCompletionFiles();
       completionDialog.close();
       showToast('Работа отправлена модератору');
       await loadRequests();
-    } catch (error) { showToast(error.message); }
+    } catch (error) { completionStatus.textContent = error.message; showToast(error.message); }
     finally { button.disabled = false; }
   });
   document.querySelector('[data-close-completion]').addEventListener('click', () => completionDialog.close());
@@ -234,6 +311,7 @@
     if (details) return openDetails(findRequest(details.dataset.details));
     const claim = event.target.closest('[data-claim]');
     if (claim) {
+      if (!window.confirm('Взять эту заявку? После подтверждения откроются контакты клиента, а заявка появится в разделе «Мои».')) return;
       claim.disabled = true;
       try { await post(`/masters/api/requests/${claim.dataset.claim}/claim/`); showToast('Заявка добавлена в «Мои»'); await loadRequests(); }
       catch (error) { showToast(error.message); await loadRequests(); }
@@ -241,6 +319,7 @@
     }
     const start = event.target.closest('[data-start]');
     if (start) {
+      if (!window.confirm('Начать работу по этой заявке? После начала клиент уже не сможет отменить её через сайт.')) return;
       start.disabled = true;
       try { await post(`/masters/api/requests/${start.dataset.start}/start/`); await loadRequests(); if (dialog.open) openDetails(findRequest(start.dataset.start)); showToast('Заявка в работе'); }
       catch (error) { showToast(error.message); start.disabled = false; }
@@ -249,8 +328,18 @@
     const complete = event.target.closest('[data-complete]');
     if (complete && !complete.disabled) {
       if (dialog.open) dialog.close();
-      completionForm.reset();
+      if (reportDraft.requestId !== complete.dataset.complete) {
+        reportDraft.requestId = complete.dataset.complete;
+        reportDraft.photos = [];
+        reportDraft.videos = [];
+        completionForm.reset();
+        try { completionForm.elements.comment.value = localStorage.getItem(reportStorageKey(reportDraft.requestId)) || ''; }
+        catch (_) { completionForm.elements.comment.value = ''; }
+        renderCompletionFiles();
+      }
       completionForm.dataset.requestId = complete.dataset.complete;
+      completionProgress.value = 0;
+      completionStatus.textContent = 'Черновик сохраняется до успешной отправки.';
       completionDialog.showModal();
       return;
     }
@@ -289,8 +378,8 @@
     button.disabled = true;
     try {
       const body = form.dataset.workId
-        ? { work_id: Number(form.dataset.workId) }
-        : { name: form.elements.name.value.trim(), price: form.elements.price.value };
+        ? { work_id: Number(form.dataset.workId), consent_method: form.elements.consent_confirmed.checked ? 'phone' : null }
+        : { name: form.elements.name.value.trim(), price: form.elements.price.value, consent_method: form.elements.consent_confirmed.checked ? 'phone' : null };
       await post(`/masters/api/requests/${form.dataset.extraForm}/extra-works/`, body);
       await loadRequests();
       openDetails(findRequest(form.dataset.extraForm));
@@ -350,7 +439,7 @@
     } catch (error) { document.getElementById('income-summary').textContent = error.message; }
   }
 
-  document.getElementById('income-withdrawal').addEventListener('click', async (event) => {
+  document.getElementById('income-withdrawal')?.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-withdraw]');
     if (!button || button.disabled) return;
     button.disabled = true;

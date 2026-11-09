@@ -92,14 +92,12 @@ jobs:
           trap cleanup EXIT
 
           test -d "$DEPLOY_PATH"
-          tar -xzf "$RELEASE_ARCHIVE" -C "$DEPLOY_PATH"
-          cd "$DEPLOY_PATH"
-
-          docker compose build web
-          docker compose up -d --remove-orphans
-          docker compose exec -T web python manage.py check
-          docker compose exec -T web python manage.py check_master_admin --check-approval
-          docker compose ps
+          test -f "$DEPLOY_PATH/.env"
+          release_dir="$DEPLOY_PATH/releases/$RELEASE_SHA"
+          mkdir -p "$release_dir"
+          tar -xzf "$RELEASE_ARCHIVE" -C "$release_dir"
+          chmod +x "$release_dir/ops/activate-release.sh" "$release_dir/ops/rollback-release.sh"
+          "$release_dir/ops/activate-release.sh" "$DEPLOY_PATH" "$release_dir"
           REMOTE
 
       - name: Verify public site
