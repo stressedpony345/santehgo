@@ -84,7 +84,7 @@ jobs:
             -o ConnectTimeout=30 \
             -o ServerAliveInterval=15 \
             "$DEPLOY_USER@$DEPLOY_HOST" \
-            "DEPLOY_PATH='$DEPLOY_PATH' RELEASE_ARCHIVE='/tmp/santehgo-$RELEASE_SHA.tar.gz' sh -s" <<'REMOTE'
+            "DEPLOY_PATH='$DEPLOY_PATH' RELEASE_SHA='$RELEASE_SHA' RELEASE_ARCHIVE='/tmp/santehgo-$RELEASE_SHA.tar.gz' sh -s" <<'REMOTE'
           set -eu
           cleanup() {
             rm -f "$RELEASE_ARCHIVE"
